@@ -1,0 +1,93 @@
+services:
+  # ─── Infrastructure ──────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: bi_user
+      POSTGRES_PASSWORD: bi_pass
+      POSTGRES_DB: bi_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bi_user -d bi_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Application Services ────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://bi_user:bi_pass@postgres:5432/bi_platform
+      REDIS_URL: redis://redis:6379
+      ANALYTICS_SERVICE_URL: http://analytics:8100
+      JWT_SECRET: change-me-in-production-min-16
+      API_PORT: "4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://bi_user:bi_pass@postgres:5432/bi_platform
+      REDIS_URL: redis://redis:6379
+      ANALYTICS_SERVICE_URL: http://analytics:8100
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    depends_on:
+      - api
+
+  analytics:
+    build:
+      context: ./apps/analytics
+      dockerfile: Dockerfile
+    ports:
+      - "8100:8100"
+    environment:
+      ANALYTICS_HOST: "0.0.0.0"
+      ANALYTICS_PORT: "8100"
+      ANALYTICS_DATABASE_URL: postgresql://bi_user:bi_pass@postgres:5432/bi_platform
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:

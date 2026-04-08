@@ -1,0 +1,52 @@
+FROM node:22-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+WORKDIR /app
+
+# ─── Install dependencies ────────────────────────────────
+FROM base AS deps
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY packages/schemas/package.json packages/schemas/
+COPY packages/types/package.json packages/types/
+COPY packages/prompts/package.json packages/prompts/
+COPY packages/agent-tools/package.json packages/agent-tools/
+COPY apps/api/package.json apps/api/
+RUN pnpm install --frozen-lockfile
+
+# ─── Build ───────────────────────────────────────────────
+FROM base AS build
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/schemas/node_modules ./packages/schemas/node_modules
+COPY --from=deps /app/packages/types/node_modules ./packages/types/node_modules
+COPY --from=deps /app/packages/prompts/node_modules ./packages/prompts/node_modules
+COPY --from=deps /app/packages/agent-tools/node_modules ./packages/agent-tools/node_modules
+COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
+COPY tsconfig.base.json ./
+COPY packages/schemas packages/schemas
+COPY packages/types packages/types
+COPY packages/prompts packages/prompts
+COPY packages/agent-tools packages/agent-tools
+COPY apps/api apps/api
+RUN pnpm --filter @bi/schemas build && \
+    pnpm --filter @bi/types build && \
+    pnpm --filter @bi/prompts build && \
+    pnpm --filter @bi/agent-tools build && \
+    pnpm --filter @bi/api build
+
+# ─── Production ──────────────────────────────────────────
+FROM base AS runner
+ENV NODE_ENV=production
+COPY --from=build /app/packages/schemas/dist packages/schemas/dist
+COPY --from=build /app/packages/schemas/package.json packages/schemas/
+COPY --from=build /app/packages/types/dist packages/types/dist
+COPY --from=build /app/packages/types/package.json packages/types/
+COPY --from=build /app/packages/prompts/dist packages/prompts/dist
+COPY --from=build /app/packages/prompts/package.json packages/prompts/
+COPY --from=build /app/packages/agent-tools/dist packages/agent-tools/dist
+COPY --from=build /app/packages/agent-tools/package.json packages/agent-tools/
+COPY --from=build /app/apps/api/dist apps/api/dist
+COPY --from=build /app/apps/api/package.json apps/api/
+COPY --from=deps /app/node_modules ./node_modules
+COPY pnpm-workspace.yaml package.json ./
+
+EXPOSE 4000
+CMD ["node", "apps/api/dist/index.js"]
