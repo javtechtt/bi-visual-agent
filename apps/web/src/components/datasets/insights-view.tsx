@@ -6,6 +6,7 @@ import {
   BarChart3,
   Sparkles,
 } from 'lucide-react';
+import { InsightChart } from './insight-chart';
 
 export interface InsightViz {
   chartType: string;
@@ -15,11 +16,21 @@ export interface InsightViz {
   yAxis?: string;
 }
 
+export interface VisualSpec {
+  type: 'line' | 'bar' | 'scatter' | 'histogram';
+  x: string;
+  y: string;
+  title: string;
+  data: Record<string, unknown>[];
+}
+
 export interface InsightData {
   title: string;
   description: string;
   confidence: { level: string; score: number; reasoning: string };
   visualization: InsightViz | null;
+  visual?: VisualSpec | null;
+  followUps?: string[];
 }
 
 export interface AnalyticsData {
@@ -34,7 +45,7 @@ export interface AnalyticsData {
   confidence: { level: string; score: number; reasoning: string };
 }
 
-export function InsightsView({ data }: { data: AnalyticsData }) {
+export function InsightsView({ data, onFollowUp }: { data: AnalyticsData; onFollowUp?: (query: string) => void }) {
   const { insights, metadata, confidence } = data;
 
   const kpiInsights = insights.filter((i) => i.visualization?.chartType === 'kpi_card');
@@ -69,14 +80,14 @@ export function InsightsView({ data }: { data: AnalyticsData }) {
       {kpiInsights.length > 0 && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {kpiInsights.map((insight, i) => (
-            <KpiInsightCard key={i} insight={insight} />
+            <KpiInsightCard key={i} insight={insight} onFollowUp={onFollowUp} />
           ))}
         </div>
       )}
 
       {/* Chart Insights */}
       {chartInsights.map((insight, i) => (
-        <ChartInsightCard key={`chart-${i}`} insight={insight} />
+        <ChartInsightCard key={`chart-${i}`} insight={insight} onFollowUp={onFollowUp} />
       ))}
 
       {/* Text Insights (anomalies, no-data messages) */}
@@ -97,12 +108,13 @@ export function InsightsView({ data }: { data: AnalyticsData }) {
 
 // ─── KPI Card ───────────────────────────────────────────────
 
-function KpiInsightCard({ insight }: { insight: InsightData }) {
+function KpiInsightCard({ insight, onFollowUp }: { insight: InsightData; onFollowUp?: (query: string) => void }) {
   const kpiData = insight.visualization?.data[0] as Record<string, number> | undefined;
   if (!kpiData) return null;
 
   const total = kpiData.total ?? kpiData.mean ?? 0;
   const mean = kpiData.mean ?? 0;
+  const visual = insight.visual;
 
   return (
     <div className="rounded-xl border border-border bg-white p-4">
@@ -118,19 +130,21 @@ function KpiInsightCard({ insight }: { insight: InsightData }) {
         {kpiData.min !== undefined && <span>Min: {formatNum(kpiData.min)}</span>}
         {kpiData.max !== undefined && <span>Max: {formatNum(kpiData.max)}</span>}
       </div>
+      {visual && visual.data.length > 0 && <InsightChart spec={visual} compact />}
       <p className="mt-2 text-xs text-muted-foreground">{insight.confidence.reasoning}</p>
+      <FollowUpButtons followUps={insight.followUps} onFollowUp={onFollowUp} />
     </div>
   );
 }
 
 // ─── Chart Card ─────────────────────────────────────────────
 
-function ChartInsightCard({ insight }: { insight: InsightData }) {
+function ChartInsightCard({ insight, onFollowUp }: { insight: InsightData; onFollowUp?: (query: string) => void }) {
   const viz = insight.visualization;
-  if (!viz) return null;
+  const visual = insight.visual;
+  if (!viz && !visual) return null;
 
   const isAnomaly = insight.title.toLowerCase().includes('anomal');
-  const isTrend = viz.chartType === 'line';
 
   return (
     <div className="rounded-xl border border-border bg-white p-4">
@@ -147,11 +161,10 @@ function ChartInsightCard({ insight }: { insight: InsightData }) {
       </div>
       <p className="mt-1 text-sm text-muted-foreground">{insight.description}</p>
 
-      {/* Mini inline chart */}
-      {isTrend && viz.data.length > 0 && <MiniLineChart data={viz.data} />}
-      {!isTrend && viz.data.length > 0 && <MiniBarChart data={viz.data} yKey={viz.yAxis ?? 'value'} />}
+      {visual && visual.data.length > 0 && <InsightChart spec={visual} />}
 
       <p className="mt-2 text-xs text-muted-foreground">{insight.confidence.reasoning}</p>
+      <FollowUpButtons followUps={insight.followUps} onFollowUp={onFollowUp} />
     </div>
   );
 }
@@ -177,51 +190,21 @@ function TextInsightCard({ insight }: { insight: InsightData }) {
   );
 }
 
-// ─── Mini Charts (pure CSS, no chart library) ───────────────
+// ─── Follow-up Buttons ─────────────────────────────────────
 
-function MiniLineChart({ data }: { data: Record<string, unknown>[] }) {
-  const values = data.map((d) => Number(d.actual ?? d.value ?? 0));
-  const trends = data.map((d) => Number(d.trend ?? 0));
-  const max = Math.max(...values, ...trends);
-  const min = Math.min(...values, ...trends);
-  const range = max - min || 1;
+function FollowUpButtons({ followUps, onFollowUp }: { followUps?: string[]; onFollowUp?: (query: string) => void }) {
+  if (!followUps || followUps.length === 0 || !onFollowUp) return null;
 
   return (
-    <div className="mt-3 flex h-20 items-end gap-px">
-      {values.map((v, i) => {
-        const h = ((v - min) / range) * 100;
-        const trendH = trends[i] ? ((trends[i] - min) / range) * 100 : 0;
-        return (
-          <div key={i} className="relative flex flex-1 flex-col items-center justify-end" style={{ height: '100%' }}>
-            {trendH > 0 && (
-              <div
-                className="absolute bottom-0 w-full rounded-sm bg-indigo-100 opacity-60"
-                style={{ height: `${trendH}%` }}
-              />
-            )}
-            <div
-              className="relative z-10 w-full rounded-sm bg-indigo-500"
-              style={{ height: `${Math.max(h, 2)}%` }}
-            />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function MiniBarChart({ data, yKey }: { data: Record<string, unknown>[]; yKey: string }) {
-  const values = data.map((d) => Math.abs(Number(d[yKey] ?? 0)));
-  const max = Math.max(...values) || 1;
-
-  return (
-    <div className="mt-3 flex h-16 items-end gap-1">
-      {values.slice(0, 20).map((v, i) => (
-        <div
+    <div className="mt-2.5 flex flex-wrap gap-1.5">
+      {followUps.map((q, i) => (
+        <button
           key={i}
-          className="flex-1 rounded-sm bg-amber-400"
-          style={{ height: `${(v / max) * 100}%`, minHeight: '2px' }}
-        />
+          onClick={() => onFollowUp(q)}
+          className="rounded-full border border-indigo-200 bg-indigo-50/50 px-2.5 py-1 text-[11px] text-indigo-700 transition-colors hover:border-indigo-400 hover:bg-indigo-100"
+        >
+          {q}
+        </button>
       ))}
     </div>
   );

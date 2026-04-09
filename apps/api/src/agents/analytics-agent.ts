@@ -13,6 +13,14 @@ export interface AnalyticsAgentRequest {
   parameters?: Record<string, unknown>;
 }
 
+export interface VisualSpec {
+  type: string;
+  x: string;
+  y: string;
+  title: string;
+  data: Record<string, unknown>[];
+}
+
 export interface AnalyticsAgentResult {
   agent: AgentRoleType;
   datasetId: string;
@@ -21,6 +29,8 @@ export interface AnalyticsAgentResult {
     description: string;
     confidence: { level: string; score: number; reasoning: string };
     visualization: Record<string, unknown> | null;
+    visual: VisualSpec | null;
+    followUps: string[];
     supportingData: Record<string, unknown> | null;
   }[];
   metadata: {
@@ -90,6 +100,8 @@ class AnalyticsAgent {
         description: i.description,
         confidence: i.confidence,
         visualization: i.visualization,
+        visual: i.visual ?? null,
+        followUps: i.follow_ups ?? [],
         supportingData: i.supporting_data,
       })),
       metadata: {

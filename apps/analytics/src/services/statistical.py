@@ -13,6 +13,7 @@ from ..models.schemas import (
     ConfidenceLevel,
     ConfidenceScore,
     Insight,
+    VisualSpec,
 )
 
 
@@ -56,6 +57,40 @@ class StatisticalService:
             variance_factor = max(1.0 - cv, 0.2)
             conf_score = round(size_factor * 0.6 + variance_factor * 0.4, 3)
 
+            # Build histogram bins for distribution visualization
+            hist_visual: VisualSpec | None = None
+            if count >= 5:
+                bin_count = min(max(count // 3, 5), 20)
+                hist_counts, bin_edges = np.histogram(values, bins=bin_count)
+                hist_data = [
+                    {
+                        "bin": f"{bin_edges[j]:.1f}–{bin_edges[j + 1]:.1f}",
+                        "count": int(hist_counts[j]),
+                    }
+                    for j in range(len(hist_counts))
+                    if int(hist_counts[j]) > 0
+                ]
+                hist_visual = VisualSpec(
+                    type="histogram",
+                    x="bin",
+                    y="count",
+                    title=f"{_humanize(col_name)} Distribution",
+                    data=hist_data,
+                )
+
+            # Build contextual follow-ups based on what we found
+            kpi_follow_ups = [
+                f"Show me the trend for {_humanize(col_name)} over time",
+            ]
+            if stability != "stable":
+                kpi_follow_ups.append(
+                    f"What's causing the {stability} in {_humanize(col_name)}?"
+                )
+            if count > 10:
+                kpi_follow_ups.append(
+                    f"Break down {_humanize(col_name)} by category"
+                )
+
             insights.append(Insight(
                 title=f"{_humanize(col_name)} Summary",
                 description=(
@@ -80,6 +115,8 @@ class StatisticalService:
                         "count": count,
                     }],
                 },
+                visual=hist_visual,
+                follow_ups=kpi_follow_ups,
             ))
 
         return insights
@@ -143,6 +180,24 @@ class StatisticalService:
             col_vals = df[col_name].drop_nulls().to_numpy().astype(float)
             anomaly_rate = len(anomalies) / len(col_vals)
 
+            # Build scatter data: all values with anomalies flagged
+            scatter_data = [
+                {"index": int(i), "value": round(float(v), 2), "anomaly": 0}
+                for i, v in enumerate(col_vals)
+            ]
+            for a in anomalies:
+                if a["row"] < len(scatter_data):
+                    scatter_data[a["row"]]["anomaly"] = 1
+
+            anomaly_follow_ups = [
+                f"Show me the rows with anomalous {_humanize(col_name)} values",
+                f"What does {_humanize(col_name)} look like without the outliers?",
+            ]
+            if anomaly_rate > 0.05:
+                anomaly_follow_ups.append(
+                    f"Is the anomaly rate in {_humanize(col_name)} increasing over time?"
+                )
+
             insights.append(Insight(
                 title=f"Anomalies in {_humanize(col_name)}",
                 description=(
@@ -162,7 +217,19 @@ class StatisticalService:
                     "xAxis": "row",
                     "yAxis": "value",
                 },
-                supporting_data={"anomalies": anomalies[:50], "total": len(anomalies)},
+                visual=VisualSpec(
+                    type="bar",
+                    x="index",
+                    y="value",
+                    title=f"{_humanize(col_name)} — Anomalies Highlighted",
+                    data=scatter_data,
+                ),
+                follow_ups=anomaly_follow_ups,
+                supporting_data={
+                    "anomalies": anomalies[:50],
+                    "total": len(anomalies),
+                    "anomaly_rate": round(anomaly_rate, 4),
+                },
             ))
 
         return insights
@@ -233,6 +300,23 @@ class StatisticalService:
                 for i, v in enumerate(values)
             ]
 
+            trend_follow_ups: list[str] = []
+            if direction != "stable":
+                trend_follow_ups.append(
+                    f"Explain the {direction} trend in {_humanize(col_name)}"
+                )
+                trend_follow_ups.append(
+                    f"Break down {_humanize(col_name)} by segment to find what's driving the {direction} pattern"
+                )
+            else:
+                trend_follow_ups.append(
+                    f"Compare {_humanize(col_name)} across different categories"
+                )
+            if p_value >= 0.05:
+                trend_follow_ups.append(
+                    f"Is there more data available to confirm the {_humanize(col_name)} trend?"
+                )
+
             insights.append(Insight(
                 title=f"{_humanize(col_name)} Trend: {direction.title()}",
                 description=(
@@ -251,6 +335,14 @@ class StatisticalService:
                     "xAxis": "index",
                     "yAxis": "actual",
                 },
+                visual=VisualSpec(
+                    type="line",
+                    x="index",
+                    y="actual",
+                    title=f"{_humanize(col_name)} Trend",
+                    data=trend_data,
+                ),
+                follow_ups=trend_follow_ups,
                 supporting_data={
                     "slope": round(slope, 6),
                     "intercept": round(intercept, 4),
