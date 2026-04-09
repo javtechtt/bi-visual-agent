@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler } from 'express';
 import { randomUUID } from 'node:crypto';
 import { ZodError } from 'zod';
+import multer from 'multer';
 import { logger } from '../logger.js';
 
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
@@ -12,6 +13,34 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
         code: 'VALIDATION_ERROR',
         message: 'Request validation failed',
         details: err.flatten(),
+      },
+      requestId,
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+
+  if (err instanceof multer.MulterError) {
+    const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    res.status(status).json({
+      error: {
+        code: err.code,
+        message: err.code === 'LIMIT_FILE_SIZE'
+          ? 'File too large. Maximum size is 50 MB.'
+          : err.message,
+      },
+      requestId,
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+
+  // Multer fileFilter errors come as plain Error with message
+  if (err instanceof Error && err.message.includes('Unsupported file type')) {
+    res.status(400).json({
+      error: {
+        code: 'UNSUPPORTED_FILE_TYPE',
+        message: err.message,
       },
       requestId,
       timestamp: new Date().toISOString(),

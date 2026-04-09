@@ -43,6 +43,7 @@ class AnalysisAction(str, Enum):
     ANOMALY = "anomaly"
     FORECAST = "forecast"
     SEGMENT = "segment"
+    ALL = "all"
 
 
 class AnalysisRequest(BaseModel):

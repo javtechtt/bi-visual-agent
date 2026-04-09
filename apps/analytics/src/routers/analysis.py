@@ -1,14 +1,13 @@
 """Analysis endpoints — called by the Node.js API/worker services."""
 
 import io
-import time
 
+import polars as pl
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 
 from ..models.schemas import (
     AnalysisRequest,
     AnalysisResponse,
-    Insight,
     DataProfile,
     ColumnProfile,
 )
@@ -16,28 +15,43 @@ from ..services.statistical import statistical_service
 
 router = APIRouter(prefix="/api/v1")
 
+# In-memory cache of loaded DataFrames (keyed by dataset_id).
+# Populated by /profile, consumed by /analyze.
+_dataset_cache: dict[str, pl.DataFrame] = {}
+
+
+# ─── Analyze ─────────────────────────────────────────────────
+
 
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze(request: AnalysisRequest) -> AnalysisResponse:
-    """Run statistical analysis on a dataset."""
-    start = time.perf_counter()
+    """Run real statistical analysis on a dataset."""
+    file_path = request.parameters.get("file_path")
 
-    placeholder_insight = Insight(
-        title=f"{request.action.value.title()} Analysis",
-        description=f"Analysis pending — dataset {request.dataset_id}",
-        confidence=statistical_service.make_confidence(
-            0.0, "Placeholder — dataset not yet loaded"
-        ),
-    )
+    # Try cache first, then load from file_path
+    df = _dataset_cache.get(request.dataset_id)
+    if df is None:
+        if not file_path or not isinstance(file_path, str):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Dataset {request.dataset_id} not in cache. Provide file_path in parameters.",
+            )
+        try:
+            df = pl.read_csv(file_path)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to read dataset: {e}") from e
+        _dataset_cache[request.dataset_id] = df
 
-    return statistical_service.build_response(
+    return statistical_service.run_analysis(
+        df,
         session_id=request.session_id,
         dataset_id=request.dataset_id,
-        insights=[placeholder_insight],
-        rows_analyzed=0,
-        methodology=f"{request.action.value} analysis via Python analytics service",
-        start_time=start,
+        action=request.action.value,
+        parameters=request.parameters,
     )
+
+
+# ─── Profile ─────────────────────────────────────────────────
 
 
 @router.post("/profile", response_model=DataProfile)
@@ -46,9 +60,7 @@ async def profile_dataset(
     dataset_id: str = Form(...),
     sample_size: int = Form(default=10000),
 ) -> DataProfile:
-    """Profile an uploaded CSV file. Accepts multipart/form-data."""
-    import polars as pl
-
+    """Profile an uploaded CSV file. Caches the DataFrame for subsequent analysis."""
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
@@ -58,6 +70,9 @@ async def profile_dataset(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {e}") from e
 
+    # Cache for /analyze calls
+    _dataset_cache[dataset_id] = df
+
     columns: list[ColumnProfile] = []
     issues: list[dict[str, str]] = []
 
@@ -66,7 +81,6 @@ async def profile_dataset(
         null_count = int(col.null_count())
         row_count = len(df)
 
-        # Detect semantic types
         semantic_type = _infer_semantic_type(col_name, str(col.dtype))
 
         columns.append(
@@ -80,7 +94,6 @@ async def profile_dataset(
             )
         )
 
-        # Flag quality issues
         if row_count > 0 and null_count / row_count > 0.5:
             issues.append({
                 "severity": "warning",
@@ -110,30 +123,23 @@ async def profile_dataset(
 
 
 def _infer_semantic_type(col_name: str, dtype: str) -> str | None:
-    """Basic heuristic semantic type detection from column name and dtype."""
     name = col_name.lower().strip()
-
     date_hints = {"date", "time", "timestamp", "created", "updated", "dt", "day", "month", "year"}
     if any(h in name for h in date_hints) or "date" in dtype.lower() or "time" in dtype.lower():
         return "datetime"
-
     id_hints = {"id", "uuid", "key", "code", "sku"}
     if any(name == h or name.endswith(f"_{h}") for h in id_hints):
         return "identifier"
-
     money_hints = {"price", "cost", "revenue", "amount", "salary", "fee", "total", "profit", "margin"}
     if any(h in name for h in money_hints):
         return "monetary"
-
     pct_hints = {"rate", "ratio", "percent", "pct", "share"}
     if any(h in name for h in pct_hints):
         return "percentage"
-
     if "email" in name:
         return "email"
     if "name" in name or "label" in name or "title" in name:
         return "text_label"
     if "count" in name or "qty" in name or "quantity" in name:
         return "count"
-
     return None

@@ -3,21 +3,28 @@
  * Structured to mirror the DB schema so migration is trivial.
  */
 
+type DatasetCapability = 'ingest_only' | 'profile_ready' | 'analysis_ready';
+
 interface DatasetRecord {
   id: string;
   name: string;
   description?: string;
   sourceType: string;
   status: 'uploading' | 'processing' | 'profiling' | 'ready' | 'error';
+  capability: DatasetCapability;
   rowCount?: number;
   columnCount?: number;
   sizeBytes: number;
   storagePath: string;
   profile?: Record<string, unknown>;
+  lastAnalysis?: Record<string, unknown>;
+  lastAnalyzedAt?: string;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
 }
+
+export type { DatasetCapability };
 
 const datasets = new Map<string, DatasetRecord>();
 

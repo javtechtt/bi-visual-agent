@@ -8,6 +8,8 @@ export interface ProfileData {
     id: string;
     name: string;
     status: string;
+    capability: 'ingest_only' | 'profile_ready' | 'analysis_ready';
+    sourceType: string;
     rowCount?: number;
     columnCount?: number;
     sizeBytes: number;

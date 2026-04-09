@@ -13,7 +13,7 @@ export default function HomePage() {
           <section className="flex-1 overflow-y-auto p-6">
             <DashboardGrid />
           </section>
-          <aside className="w-[420px] border-l border-border">
+          <aside className="hidden w-[420px] border-l border-border xl:block">
             <ChatPanel />
           </aside>
         </main>

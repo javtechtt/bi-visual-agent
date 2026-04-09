@@ -10,7 +10,10 @@ export function createServer() {
   const app = express();
 
   // ─── Middleware ──────────────────────────────────────────
-  app.use(cors({ origin: config.API_CORS_ORIGIN, credentials: true }));
+  app.use(cors({
+    origin: config.NODE_ENV === 'development' ? true : config.API_CORS_ORIGIN,
+    credentials: true,
+  }));
   app.use(express.json({ limit: '10mb' }));
   app.use(requestId);
 

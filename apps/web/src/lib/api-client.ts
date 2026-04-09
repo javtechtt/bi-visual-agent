@@ -11,17 +11,36 @@ class ApiClient {
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const url = `${this.baseUrl}${path}`;
-    const response = await fetch(url, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...init?.headers,
-      },
-    });
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          ...init?.headers,
+        },
+      });
+    } catch {
+      throw new ApiRequestError(
+        `Cannot reach API server at ${this.baseUrl}. Is it running?`,
+        'NETWORK_ERROR',
+        0,
+      );
+    }
 
     if (!response.ok) {
-      const error: ApiError = await response.json();
-      throw new ApiRequestError(error.error.message, error.error.code, response.status);
+      let message = `Request failed (${response.status})`;
+      let code = 'REQUEST_ERROR';
+      try {
+        const error: ApiError = await response.json();
+        message = error.error.message;
+        code = error.error.code;
+      } catch {
+        // Response wasn't JSON — use status text
+        message = `${response.status} ${response.statusText}`;
+      }
+      throw new ApiRequestError(message, code, response.status);
     }
 
     const body: ApiResponse<T> = await response.json();
@@ -44,15 +63,31 @@ class ApiClient {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch(url, {
-      method: 'POST',
-      body: formData,
-      // No Content-Type header — browser sets it with boundary
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+      });
+    } catch {
+      throw new ApiRequestError(
+        `Cannot reach API server at ${this.baseUrl}. Is it running?`,
+        'NETWORK_ERROR',
+        0,
+      );
+    }
 
     if (!response.ok) {
-      const error: ApiError = await response.json();
-      throw new ApiRequestError(error.error.message, error.error.code, response.status);
+      let message = `Upload failed (${response.status})`;
+      let code = 'UPLOAD_ERROR';
+      try {
+        const error: ApiError = await response.json();
+        message = error.error.message;
+        code = error.error.code;
+      } catch {
+        message = `${response.status} ${response.statusText}`;
+      }
+      throw new ApiRequestError(message, code, response.status);
     }
 
     const body: ApiResponse<T> = await response.json();
