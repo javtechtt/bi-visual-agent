@@ -18,26 +18,28 @@ export function Sidebar() {
 
   return (
     <aside className="flex w-16 flex-col items-center border-r border-border bg-sidebar py-4 lg:w-56">
-      <div className="mb-8 flex items-center gap-2 px-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600">
+      {/* Logo */}
+      <div className="mb-8 flex items-center gap-2.5 px-4">
+        <div className="glow-cyan flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-indigo-600">
           <Sparkles className="h-4 w-4 text-white" />
         </div>
-        <span className="hidden text-sm font-semibold tracking-tight lg:block">
+        <span className="hidden text-sm font-semibold tracking-tight text-foreground lg:block">
           BI Visual Agent
         </span>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 px-2">
+      {/* Navigation */}
+      <nav className="flex flex-1 flex-col gap-0.5 px-2">
         {navigation.map((item) => {
           const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
           return (
             <Link
               key={item.name}
               href={item.href}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+              className={`transition-theme flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${
                 active
-                  ? 'bg-muted font-medium text-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  ? 'bg-surface-raised font-medium text-accent-cyan'
+                  : 'text-muted-foreground hover:bg-surface hover:text-foreground'
               }`}
             >
               <item.icon className="h-4 w-4 shrink-0" />
@@ -46,6 +48,14 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Status */}
+      <div className="px-4">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="h-1.5 w-1.5 rounded-full bg-success" />
+          <span className="hidden lg:block">System active</span>
+        </div>
+      </div>
     </aside>
   );
 }

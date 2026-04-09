@@ -68,9 +68,9 @@ export default function DatasetsPage() {
         )}
 
         {fetchError && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-            <p className="text-sm font-medium text-red-800">Failed to load datasets</p>
-            <p className="text-xs text-red-600">{fetchError}</p>
+          <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+            <p className="text-sm font-medium text-red-400">Failed to load datasets</p>
+            <p className="text-xs text-red-300/70">{fetchError}</p>
           </div>
         )}
 

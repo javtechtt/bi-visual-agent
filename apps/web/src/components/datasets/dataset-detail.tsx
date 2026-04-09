@@ -106,18 +106,18 @@ export function DatasetDetail({ dataset }: { dataset: DatasetSummary }) {
 
       {/* Ingest-only message */}
       {!fullDataset && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-          <p className="text-sm font-medium text-amber-800">Analytics not available</p>
-          <p className="mt-1 text-sm text-amber-700">
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+          <p className="text-sm font-medium text-amber-400">Analytics not available</p>
+          <p className="mt-1 text-sm text-amber-300/70">
             {`${dataset.sourceType.toUpperCase()} file "${dataset.name}" has been accepted but profiling did not complete. The file may not contain extractable tabular data.`}
           </p>
         </div>
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-          <p className="text-sm font-medium text-red-800">Error</p>
-          <p className="text-xs text-red-600">{error}</p>
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+          <p className="text-sm font-medium text-red-400">Error</p>
+          <p className="text-xs text-red-300/70">{error}</p>
         </div>
       )}
 
@@ -125,7 +125,7 @@ export function DatasetDetail({ dataset }: { dataset: DatasetSummary }) {
       {dataset.capability === 'analysis_ready' && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-violet-600" />
+            <Sparkles className="h-4 w-4 text-accent-cyan" />
             <h3 className="text-sm font-semibold">Run Analytics</h3>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -139,7 +139,7 @@ export function DatasetDetail({ dataset }: { dataset: DatasetSummary }) {
                 key={action}
                 onClick={() => handleAnalyze(action)}
                 disabled={analyzeState === 'running'}
-                className="flex flex-col items-start rounded-lg border border-border bg-white px-4 py-2.5 text-left transition-all hover:border-violet-300 hover:bg-violet-50/50 disabled:opacity-50"
+                className="transition-theme flex flex-col items-start rounded-lg border border-border bg-surface px-4 py-2.5 text-left hover:border-accent-cyan/30 hover:bg-surface-raised disabled:opacity-50"
               >
                 <span className="text-sm font-medium">{label}</span>
                 <span className="text-xs text-muted-foreground">{desc}</span>
@@ -148,7 +148,7 @@ export function DatasetDetail({ dataset }: { dataset: DatasetSummary }) {
           </div>
           {analyzeState === 'running' && (
             <div className="flex items-center gap-2 py-2">
-              <Loader2 className="h-4 w-4 animate-spin text-violet-600" />
+              <Loader2 className="h-4 w-4 animate-spin text-accent-cyan" />
               <span className="text-sm text-muted-foreground">Analytics Agent is processing...</span>
             </div>
           )}

@@ -46,7 +46,7 @@ export function UploadPanel({ onUploaded }: { onUploaded: (data: ProfileData) =>
         onClick={() => inputRef.current?.click()}
         className={`
           flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-8 transition-all
-          ${dragOver ? 'border-indigo-500 bg-indigo-50/50' : 'border-border hover:border-indigo-300 hover:bg-muted/30'}
+          ${dragOver ? 'border-accent-cyan bg-accent-cyan/5' : 'border-border hover:border-accent-cyan/30 hover:bg-surface'}
           ${uploading ? 'pointer-events-none opacity-60' : ''}
         `}
       >
@@ -63,13 +63,13 @@ export function UploadPanel({ onUploaded }: { onUploaded: (data: ProfileData) =>
         />
         {uploading ? (
           <>
-            <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+            <Loader2 className="h-8 w-8 animate-spin text-accent-cyan" />
             <p className="text-sm font-medium">Uploading and profiling...</p>
           </>
         ) : (
           <>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50">
-              <Upload className="h-5 w-5 text-indigo-600" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-cyan/10">
+              <Upload className="h-5 w-5 text-accent-cyan" />
             </div>
             <p className="text-sm font-medium">Drop a file here, or click to browse</p>
             <p className="text-xs text-muted-foreground">CSV, Excel, or PDF — max 50 MB</p>
@@ -78,9 +78,9 @@ export function UploadPanel({ onUploaded }: { onUploaded: (data: ProfileData) =>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-          <p className="text-sm font-medium text-red-800">Upload failed</p>
-          <p className="text-xs text-red-600">{error}</p>
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+          <p className="text-sm font-medium text-red-400">Upload failed</p>
+          <p className="text-xs text-red-300/70">{error}</p>
         </div>
       )}
     </div>

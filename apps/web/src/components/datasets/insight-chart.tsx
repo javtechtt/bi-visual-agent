@@ -69,18 +69,18 @@ function TrendLineChart({ spec, compact }: { spec: VisualSpec; compact?: boolean
 
   return (
     <LineChart data={spec.data} margin={compact ? { top: 4, right: 4, bottom: 4, left: 4 } : { top: 8, right: 16, bottom: 4, left: 0 }}>
-      {!compact && <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />}
+      {!compact && <CartesianGrid strokeDasharray="3 3" stroke="#1e2130" />}
       {!compact && (
         <XAxis
           dataKey={spec.x}
-          tick={{ fontSize: 10, fill: '#9ca3af' }}
-          axisLine={{ stroke: '#e5e7eb' }}
+          tick={{ fontSize: 10, fill: '#7a8194' }}
+          axisLine={{ stroke: '#1e2130' }}
           tickLine={false}
         />
       )}
       {!compact && (
         <YAxis
-          tick={{ fontSize: 10, fill: '#9ca3af' }}
+          tick={{ fontSize: 10, fill: '#7a8194' }}
           axisLine={false}
           tickLine={false}
           width={48}
@@ -89,7 +89,7 @@ function TrendLineChart({ spec, compact }: { spec: VisualSpec; compact?: boolean
       )}
       {!compact && (
         <Tooltip
-          contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e5e7eb' }}
+          contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #1e2130', backgroundColor: '#10121a', color: '#e8eaed' }}
           formatter={(value: number) => [formatAxis(value), '']}
           labelFormatter={(label) => `Point ${label}`}
         />
@@ -129,18 +129,18 @@ function AnomalyBarChart({ spec, compact }: { spec: VisualSpec; compact?: boolea
 
   return (
     <BarChart data={spec.data} margin={compact ? { top: 4, right: 4, bottom: 4, left: 4 } : { top: 8, right: 16, bottom: 4, left: 0 }}>
-      {!compact && <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />}
+      {!compact && <CartesianGrid strokeDasharray="3 3" stroke="#1e2130" vertical={false} />}
       {!compact && (
         <XAxis
           dataKey={spec.x}
-          tick={{ fontSize: 10, fill: '#9ca3af' }}
-          axisLine={{ stroke: '#e5e7eb' }}
+          tick={{ fontSize: 10, fill: '#7a8194' }}
+          axisLine={{ stroke: '#1e2130' }}
           tickLine={false}
         />
       )}
       {!compact && (
         <YAxis
-          tick={{ fontSize: 10, fill: '#9ca3af' }}
+          tick={{ fontSize: 10, fill: '#7a8194' }}
           axisLine={false}
           tickLine={false}
           width={48}
@@ -149,7 +149,7 @@ function AnomalyBarChart({ spec, compact }: { spec: VisualSpec; compact?: boolea
       )}
       {!compact && (
         <Tooltip
-          contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e5e7eb' }}
+          contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #1e2130', backgroundColor: '#10121a', color: '#e8eaed' }}
           formatter={(value: number, _name: string, entry) => {
             const isAnomaly = Number((entry as { payload?: Record<string, unknown> }).payload?.anomaly ?? 0) === 1;
             return [formatAxis(value), isAnomaly ? 'Outlier' : 'Value'];
@@ -180,12 +180,12 @@ function AnomalyBarChart({ spec, compact }: { spec: VisualSpec; compact?: boolea
 function DistributionHistogram({ spec, compact }: { spec: VisualSpec; compact?: boolean }) {
   return (
     <BarChart data={spec.data} margin={compact ? { top: 4, right: 4, bottom: 4, left: 4 } : { top: 8, right: 16, bottom: 4, left: 0 }}>
-      {!compact && <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />}
+      {!compact && <CartesianGrid strokeDasharray="3 3" stroke="#1e2130" vertical={false} />}
       {!compact && (
         <XAxis
           dataKey={spec.x}
-          tick={{ fontSize: 9, fill: '#9ca3af' }}
-          axisLine={{ stroke: '#e5e7eb' }}
+          tick={{ fontSize: 9, fill: '#7a8194' }}
+          axisLine={{ stroke: '#1e2130' }}
           tickLine={false}
           interval={0}
           angle={-30}
@@ -195,7 +195,7 @@ function DistributionHistogram({ spec, compact }: { spec: VisualSpec; compact?: 
       )}
       {!compact && (
         <YAxis
-          tick={{ fontSize: 10, fill: '#9ca3af' }}
+          tick={{ fontSize: 10, fill: '#7a8194' }}
           axisLine={false}
           tickLine={false}
           width={32}
@@ -204,7 +204,7 @@ function DistributionHistogram({ spec, compact }: { spec: VisualSpec; compact?: 
       )}
       {!compact && (
         <Tooltip
-          contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e5e7eb' }}
+          contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #1e2130', backgroundColor: '#10121a', color: '#e8eaed' }}
           formatter={(value: number) => [value, 'Count']}
         />
       )}
@@ -218,13 +218,13 @@ function DistributionHistogram({ spec, compact }: { spec: VisualSpec; compact?: 
 function CorrelationScatter({ spec, compact }: { spec: VisualSpec; compact?: boolean }) {
   return (
     <ScatterChart margin={compact ? { top: 4, right: 4, bottom: 4, left: 4 } : { top: 8, right: 16, bottom: 4, left: 0 }}>
-      {!compact && <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />}
+      {!compact && <CartesianGrid strokeDasharray="3 3" stroke="#1e2130" />}
       {!compact && (
         <XAxis
           dataKey={spec.x}
           type="number"
-          tick={{ fontSize: 10, fill: '#9ca3af' }}
-          axisLine={{ stroke: '#e5e7eb' }}
+          tick={{ fontSize: 10, fill: '#7a8194' }}
+          axisLine={{ stroke: '#1e2130' }}
           tickLine={false}
           name={spec.x}
           tickFormatter={(v: number) => formatAxis(v)}
@@ -234,7 +234,7 @@ function CorrelationScatter({ spec, compact }: { spec: VisualSpec; compact?: boo
         <YAxis
           dataKey={spec.y}
           type="number"
-          tick={{ fontSize: 10, fill: '#9ca3af' }}
+          tick={{ fontSize: 10, fill: '#7a8194' }}
           axisLine={false}
           tickLine={false}
           width={48}
@@ -244,7 +244,7 @@ function CorrelationScatter({ spec, compact }: { spec: VisualSpec; compact?: boo
       )}
       {!compact && (
         <Tooltip
-          contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e5e7eb' }}
+          contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #1e2130', backgroundColor: '#10121a', color: '#e8eaed' }}
           formatter={(value: number) => formatAxis(value)}
         />
       )}

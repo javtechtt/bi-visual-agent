@@ -61,17 +61,17 @@ export function InsightsView({ data, onFollowUp }: { data: AnalyticsData; onFoll
 
   const confColor =
     confidence.level === 'high'
-      ? 'text-emerald-600'
+      ? 'text-emerald-400'
       : confidence.level === 'medium'
-        ? 'text-amber-600'
-        : 'text-red-600';
+        ? 'text-amber-400'
+        : 'text-red-400';
 
   return (
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-violet-600" />
+          <Sparkles className="h-4 w-4 text-accent-cyan" />
           <h3 className="text-sm font-semibold">Analytics Agent Results</h3>
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -101,7 +101,7 @@ export function InsightsView({ data, onFollowUp }: { data: AnalyticsData; onFoll
       ))}
 
       {/* Methodology */}
-      <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+      <div className="rounded-lg border border-border bg-surface px-4 py-3">
         <p className="text-xs text-muted-foreground">
           <span className="font-medium">Methodology:</span> {metadata.methodology}
         </p>
@@ -122,7 +122,7 @@ function KpiInsightCard({ insight, onFollowUp }: { insight: InsightData; onFollo
   const visual = insight.visual;
 
   return (
-    <div className="rounded-xl border border-border bg-white p-4">
+    <div className="rounded-xl border border-border bg-surface p-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           {insight.visualization?.title ?? insight.title}
@@ -152,13 +152,13 @@ function ChartInsightCard({ insight, onFollowUp }: { insight: InsightData; onFol
   const isAnomaly = insight.title.toLowerCase().includes('anomal');
 
   return (
-    <div className="rounded-xl border border-border bg-white p-4">
+    <div className="rounded-xl border border-border bg-surface p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {isAnomaly ? (
             <AlertTriangle className="h-4 w-4 text-amber-500" />
           ) : (
-            <BarChart3 className="h-4 w-4 text-indigo-500" />
+            <BarChart3 className="h-4 w-4 text-accent-cyan" />
           )}
           <p className="text-sm font-semibold">{insight.title}</p>
         </div>
@@ -180,7 +180,7 @@ function TextInsightCard({ insight }: { insight: InsightData }) {
   const isMissing = insight.title.toLowerCase().includes('no ');
 
   return (
-    <div className={`rounded-xl border p-4 ${isMissing ? 'border-border bg-muted/20' : 'border-border bg-white'}`}>
+    <div className={`rounded-xl border p-4 ${isMissing ? 'border-border bg-muted/30' : 'border-border bg-surface'}`}>
       <div className="flex items-center gap-2">
         {isMissing ? (
           <Minus className="h-4 w-4 text-muted-foreground" />
@@ -215,7 +215,7 @@ function FollowUpButtons({ insight, onFollowUp }: { insight: InsightData; onFoll
         <button
           key={i}
           onClick={() => onFollowUp({ query: q, context: { metric, insightType } })}
-          className="rounded-full border border-indigo-200 bg-indigo-50/50 px-2.5 py-1 text-[11px] text-indigo-700 transition-colors hover:border-indigo-400 hover:bg-indigo-100"
+          className="transition-theme rounded-full border border-cyan-500/20 bg-cyan-500/5 px-2.5 py-1 text-[11px] text-cyan-400 hover:border-cyan-400/40 hover:bg-cyan-500/10"
         >
           {q}
         </button>

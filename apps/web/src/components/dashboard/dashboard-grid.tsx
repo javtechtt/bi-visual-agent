@@ -22,10 +22,10 @@ export function DashboardGrid() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-border bg-muted/30">
+        <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-border bg-surface">
           <p className="text-sm text-muted-foreground">Revenue Trend Chart</p>
         </div>
-        <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-border bg-muted/30">
+        <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-border bg-surface">
           <p className="text-sm text-muted-foreground">Anomaly Detection Panel</p>
         </div>
       </div>

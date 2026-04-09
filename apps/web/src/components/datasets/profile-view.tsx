@@ -40,15 +40,15 @@ export function ProfileView({ data }: { data: ProfileData }) {
 
   const qualityPct = Math.round(profile.qualityScore * 100);
   const qualityColor =
-    qualityPct >= 90 ? 'text-emerald-600' : qualityPct >= 70 ? 'text-amber-600' : 'text-red-600';
+    qualityPct >= 90 ? 'text-emerald-400' : qualityPct >= 70 ? 'text-amber-400' : 'text-red-400';
   const qualityBg =
-    qualityPct >= 90 ? 'bg-emerald-50' : qualityPct >= 70 ? 'bg-amber-50' : 'bg-red-50';
+    qualityPct >= 90 ? 'bg-emerald-500/10' : qualityPct >= 70 ? 'bg-amber-500/10' : 'bg-red-500/10';
   const confidenceColor =
     confidence.level === 'high'
-      ? 'text-emerald-600 bg-emerald-50'
+      ? 'text-emerald-400 bg-emerald-500/10'
       : confidence.level === 'medium'
-        ? 'text-amber-600 bg-amber-50'
-        : 'text-red-600 bg-red-50';
+        ? 'text-amber-400 bg-amber-500/10'
+        : 'text-red-400 bg-red-500/10';
 
   return (
     <div className="space-y-4">
@@ -82,7 +82,7 @@ export function ProfileView({ data }: { data: ProfileData }) {
         <p className="mt-1 text-sm">{confidence.reasoning}</p>
         <p className="mt-2 text-xs text-muted-foreground">
           Dataset: {dataset.name} &middot; {formatBytes(dataset.sizeBytes)} &middot; Status:{' '}
-          <span className="font-medium text-emerald-600">{dataset.status}</span>
+          <span className="font-medium text-emerald-400">{dataset.status}</span>
         </p>
       </div>
 
@@ -93,10 +93,10 @@ export function ProfileView({ data }: { data: ProfileData }) {
           {profile.issues.map((issue, i) => (
             <div
               key={i}
-              className="flex items-start gap-2 rounded-lg border border-border bg-white p-3"
+              className="flex items-start gap-2 rounded-lg border border-border bg-surface p-3"
             >
               {issue.severity === 'warning' ? (
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
               ) : (
                 <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
               )}
@@ -117,7 +117,7 @@ export function ProfileView({ data }: { data: ProfileData }) {
       <div className="overflow-hidden rounded-xl border border-border">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b bg-muted/50 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <tr className="border-b bg-surface text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <th className="px-4 py-2.5">Column</th>
               <th className="px-4 py-2.5">Type</th>
               <th className="px-4 py-2.5">Semantic</th>
@@ -168,7 +168,7 @@ function StatCard({
   value: string;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-white p-4">
+    <div className="rounded-xl border border-border bg-surface p-4">
       <div className="flex items-center gap-2">
         <Icon className="h-4 w-4 text-muted-foreground" />
         <span className="text-xs font-medium text-muted-foreground">{label}</span>

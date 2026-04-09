@@ -21,9 +21,9 @@ const typeIcons: Record<string, typeof Database> = {
 };
 
 const capabilityLabels: Record<string, { text: string; color: string }> = {
-  analysis_ready: { text: 'Analysis Ready', color: 'bg-emerald-50 text-emerald-700' },
-  profile_ready: { text: 'Profiled', color: 'bg-blue-50 text-blue-700' },
-  ingest_only: { text: 'Ingested', color: 'bg-amber-50 text-amber-700' },
+  analysis_ready: { text: 'Analysis Ready', color: 'bg-emerald-500/15 text-emerald-400' },
+  profile_ready: { text: 'Profiled', color: 'bg-blue-500/15 text-blue-400' },
+  ingest_only: { text: 'Ingested', color: 'bg-amber-500/15 text-amber-400' },
 };
 
 export function DatasetList({
@@ -52,8 +52,8 @@ export function DatasetList({
               onClick={() => onSelect(ds.id)}
               className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all ${
                 isSelected
-                  ? 'border-indigo-300 bg-indigo-50/50'
-                  : 'border-border bg-white hover:border-indigo-200 hover:bg-muted/30'
+                  ? 'border-accent-cyan/30 bg-accent-cyan/5'
+                  : 'border-border bg-surface hover:border-accent-cyan/20 hover:bg-surface-raised'
               }`}
             >
               <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />

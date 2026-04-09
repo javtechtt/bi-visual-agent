@@ -12,16 +12,16 @@ export function KpiCard({ title, value, change, trend, subtitle }: KpiCardProps)
   const TrendIcon = trend === 'up' ? ArrowUp : trend === 'down' ? ArrowDown : Minus;
   const trendColor =
     trend === 'up'
-      ? 'text-emerald-600 bg-emerald-50'
+      ? 'text-emerald-400 bg-emerald-500/15'
       : trend === 'down'
-        ? 'text-red-600 bg-red-50'
-        : 'text-zinc-500 bg-zinc-100';
+        ? 'text-red-400 bg-red-500/15'
+        : 'text-zinc-400 bg-zinc-500/15';
 
   return (
-    <div className="rounded-xl border border-border bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
+    <div className="transition-theme rounded-xl border border-border bg-surface p-5 hover:border-border/80">
       <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</p>
       <div className="mt-2 flex items-baseline gap-3">
-        <span className="text-2xl font-semibold tracking-tight">{value}</span>
+        <span className="text-2xl font-semibold tracking-tight text-foreground">{value}</span>
         {change !== undefined && (
           <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium ${trendColor}`}>
             <TrendIcon className="h-3 w-3" />

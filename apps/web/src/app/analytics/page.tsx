@@ -123,7 +123,7 @@ export default function AnalyticsPage() {
           <div className="flex h-48 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/20">
             <BarChart3 className="h-8 w-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">No datasets uploaded yet.</p>
-            <Link href="/datasets" className="text-sm font-medium text-indigo-600 hover:underline">
+            <Link href="/datasets" className="text-sm font-medium text-accent-cyan hover:underline">
               Upload a dataset
             </Link>
           </div>
@@ -157,8 +157,8 @@ export default function AnalyticsPage() {
                   onClick={() => setSelectedId(ds.id)}
                   className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left transition-all ${
                     isSelected
-                      ? 'border-indigo-400 bg-indigo-50'
-                      : 'border-border bg-white hover:border-indigo-200'
+                      ? 'border-accent-cyan/30 bg-accent-cyan/5'
+                      : 'border-border bg-surface hover:border-accent-cyan/20'
                   }`}
                 >
                   <FileSpreadsheet className="h-3.5 w-3.5 text-muted-foreground" />
@@ -167,7 +167,7 @@ export default function AnalyticsPage() {
                     <p className="text-[10px] text-muted-foreground">
                       {ds.rowCount?.toLocaleString() ?? '?'} rows
                       {hasResults && (
-                        <span className="ml-1 text-emerald-600">
+                        <span className="ml-1 text-emerald-400">
                           — analyzed {formatTime(ds.lastAnalyzedAt!)}
                         </span>
                       )}
@@ -184,7 +184,7 @@ export default function AnalyticsPage() {
               {ingestOnlyDatasets.map((ds) => (
                 <div
                   key={ds.id}
-                  className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 opacity-60"
+                  className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 opacity-50"
                 >
                   {ds.sourceType === 'pdf' ? (
                     <FileText className="h-3.5 w-3.5 text-muted-foreground" />
@@ -207,7 +207,7 @@ export default function AnalyticsPage() {
         {selected && selected.capability === 'analysis_ready' && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-violet-600" />
+              <Sparkles className="h-4 w-4 text-accent-cyan" />
               <h3 className="text-sm font-semibold">
                 {displayResult ? 'Re-run Analytics' : 'Run Analytics'}
               </h3>
@@ -223,7 +223,7 @@ export default function AnalyticsPage() {
                   key={action}
                   onClick={() => handleAnalyze(action)}
                   disabled={analyzeState === 'running'}
-                  className="flex flex-col items-start rounded-lg border border-border bg-white px-4 py-2.5 text-left transition-all hover:border-violet-300 hover:bg-violet-50/50 disabled:opacity-50"
+                  className="transition-theme flex flex-col items-start rounded-lg border border-border bg-surface px-4 py-2.5 text-left hover:border-accent-cyan/30 hover:bg-surface-raised disabled:opacity-50"
                 >
                   <span className="text-sm font-medium">{label}</span>
                   <span className="text-xs text-muted-foreground">{desc}</span>
@@ -232,7 +232,7 @@ export default function AnalyticsPage() {
             </div>
             {analyzeState === 'running' && (
               <div className="flex items-center gap-2 py-2">
-                <Loader2 className="h-4 w-4 animate-spin text-violet-600" />
+                <Loader2 className="h-4 w-4 animate-spin text-accent-cyan" />
                 <span className="text-sm text-muted-foreground">Analytics Agent is processing...</span>
               </div>
             )}
@@ -240,9 +240,9 @@ export default function AnalyticsPage() {
         )}
 
         {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-            <p className="text-sm font-medium text-red-800">Error</p>
-            <p className="text-xs text-red-600">{error}</p>
+          <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+            <p className="text-sm font-medium text-red-400">Error</p>
+            <p className="text-xs text-red-300/70">{error}</p>
           </div>
         )}
 
