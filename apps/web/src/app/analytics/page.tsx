@@ -191,9 +191,7 @@ export default function AnalyticsPage() {
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">{ds.name}</p>
                     <p className="text-[10px] text-muted-foreground">
-                      {ds.sourceType === 'pdf'
-                        ? 'PDF — awaiting extraction'
-                        : `${ds.sourceType.toUpperCase()} — convert to CSV`}
+                      {`${ds.sourceType.toUpperCase()} — no tabular data found`}
                     </p>
                   </div>
                 </div>
@@ -246,7 +244,7 @@ export default function AnalyticsPage() {
         )}
 
         {/* Results */}
-        {displayResult && <InsightsView data={displayResult} />}
+        {displayResult && <InsightsView data={displayResult} onFollowUp={(_q) => handleAnalyze('all')} />}
 
         {/* No results yet for selected dataset */}
         {selected && selected.capability === 'analysis_ready' && !displayResult && analyzeState === 'idle' && (

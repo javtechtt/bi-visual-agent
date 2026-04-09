@@ -106,9 +106,7 @@ export function DatasetDetail({ dataset }: { dataset: DatasetSummary }) {
         <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
           <p className="text-sm font-medium text-amber-800">Analytics not available</p>
           <p className="mt-1 text-sm text-amber-700">
-            {dataset.sourceType === 'pdf'
-              ? `PDF document "${dataset.name}" has been accepted and stored. Analytics will be available after the document extraction pipeline is implemented.`
-              : `${dataset.sourceType.toUpperCase()} file "${dataset.name}" has been accepted and stored. Convert to CSV for immediate profiling and analysis.`}
+            {`${dataset.sourceType.toUpperCase()} file "${dataset.name}" has been accepted but profiling did not complete. The file may not contain extractable tabular data.`}
           </p>
         </div>
       )}
@@ -154,7 +152,7 @@ export function DatasetDetail({ dataset }: { dataset: DatasetSummary }) {
         </div>
       )}
 
-      {analyticsResult && <InsightsView data={analyticsResult} />}
+      {analyticsResult && <InsightsView data={analyticsResult} onFollowUp={(_q) => handleAnalyze('all')} />}
     </div>
   );
 }

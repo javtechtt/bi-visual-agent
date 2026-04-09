@@ -30,7 +30,7 @@ class ColumnProfile(BaseModel):
 class DataProfile(BaseModel):
     dataset_id: str
     row_count: int = Field(ge=0)
-    column_count: int = Field(gt=0)
+    column_count: int = Field(ge=1)
     columns: list[ColumnProfile]
     quality_score: float = Field(ge=0.0, le=1.0)
     issues: list[dict[str, Any]] = Field(default_factory=list)
@@ -53,11 +53,23 @@ class AnalysisRequest(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
+class VisualSpec(BaseModel):
+    """Simplified chart specification auto-attached to insights."""
+
+    type: str  # 'line' | 'bar' | 'scatter' | 'histogram'
+    x: str
+    y: str
+    title: str
+    data: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class Insight(BaseModel):
     title: str
     description: str
     confidence: ConfidenceScore
     visualization: dict[str, Any] | None = None
+    visual: VisualSpec | None = None
+    follow_ups: list[str] = Field(default_factory=list)
     supporting_data: dict[str, Any] | None = None
 
 

@@ -19,6 +19,14 @@ interface ProfileResult {
 
 // ─── Analyze ────────────────────────────────────────────────
 
+interface VisualSpec {
+  type: string;
+  x: string;
+  y: string;
+  title: string;
+  data: Record<string, unknown>[];
+}
+
 interface AnalyticsInsight {
   title: string;
   description: string;
@@ -30,6 +38,8 @@ interface AnalyticsInsight {
     xAxis?: string;
     yAxis?: string;
   } | null;
+  visual: VisualSpec | null;
+  follow_ups: string[];
   supporting_data: Record<string, unknown> | null;
 }
 
@@ -74,9 +84,9 @@ export async function analyzeDataset(
 
 export type { AnalyticsResult, AnalyticsInsight };
 
-// ─── Profile ────────────────────────────────────────────────
+// ─── Profile (CSV and Excel) ────────────────────────────────
 
-export async function profileCsv(
+export async function profileFile(
   datasetId: string,
   fileBuffer: Buffer,
   filename: string,
@@ -88,15 +98,35 @@ export async function profileCsv(
   const url = `${config.ANALYTICS_SERVICE_URL}/api/v1/profile`;
   logger.info({ url, datasetId, filename }, 'Calling analytics service for profiling');
 
-  const response = await fetch(url, {
-    method: 'POST',
-    body: formData,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+  } catch (err) {
+    logger.error({ err, datasetId }, 'Analytics service unreachable for profiling');
+    throw new Error(`Analytics service unreachable: ${err instanceof Error ? err.message : 'connection failed'}`);
+  }
 
   if (!response.ok) {
     const text = await response.text();
+    logger.error({ datasetId, status: response.status, body: text }, 'Analytics service profiling failed');
     throw new Error(`Analytics service profile failed (${response.status}): ${text}`);
   }
 
-  return response.json() as Promise<ProfileResult>;
+  logger.info({ datasetId }, 'Analytics service profiling succeeded');
+
+  const text = await response.text();
+  let body: ProfileResult;
+  try {
+    body = JSON.parse(text) as ProfileResult;
+  } catch (err) {
+    logger.error({ datasetId, raw: text.slice(0, 500) }, 'Analytics service returned invalid JSON for profile');
+    throw new Error(`Analytics service returned invalid JSON for profile: ${err instanceof Error ? err.message : err}`);
+  }
+  return body;
 }
+
+/** @deprecated Use profileFile instead */
+export const profileCsv = profileFile;

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import type { AgentContext, AgentRoleType } from '@bi/types';
 import { logger } from '../logger.js';
-import { profileCsv } from '../services/analytics-client.js';
+import { profileFile } from '../services/analytics-client.js';
 import { ensureUploadDir, getUploadPath } from '../services/storage.js';
 import {
   createDataset,
@@ -71,8 +71,9 @@ class DataAgent {
     const storageName = `${datasetId}-${request.filename}`;
     const storagePath = getUploadPath(storageName);
     await writeFile(storagePath, request.buffer);
+    logger.info({ datasetId, storagePath }, 'Data agent: file saved to disk');
 
-    // 2. Register dataset (capability set per file type below)
+    // 2. Register dataset
     createDataset({
       id: datasetId,
       name: request.filename,
@@ -85,33 +86,62 @@ class DataAgent {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
+    logger.info({ datasetId }, 'Data agent: dataset record created');
 
-    // 3. Route by file type
-    if (request.fileType === 'pdf') {
-      return this.handlePdfIngest(datasetId, request, storagePath, startTime);
-    }
-
-    if (request.fileType === 'excel') {
-      return this.handleExcelIngest(datasetId, request, storagePath, startTime);
-    }
-
-    // CSV — call analytics service for profiling
-    return this.handleCsvIngest(datasetId, request, storagePath, startTime);
+    // 3. All tabular file types (CSV, Excel, PDF) go through the same
+    // profiling pipeline. The Python analytics service detects the format
+    // by filename extension and uses the appropriate parser.
+    return this.handleTabularIngest(datasetId, request, startTime);
   }
 
-  private async handleCsvIngest(
+  private async handleTabularIngest(
     datasetId: string,
     request: IngestAndProfileRequest,
-    _storagePath: string,
     startTime: number,
   ): Promise<IngestAndProfileResult> {
+    const label = request.fileType === 'excel' ? 'Excel' : 'CSV';
+
+    logger.info({ datasetId, fileType: request.fileType }, `Data agent: sending ${label} to profiling service`);
+
     let profileResult;
     try {
-      profileResult = await profileCsv(datasetId, request.buffer, request.filename);
+      profileResult = await profileFile(datasetId, request.buffer, request.filename);
     } catch (err) {
-      updateDataset(datasetId, { status: 'error' });
-      throw err;
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.error({ datasetId, err: errorMsg }, `Data agent: ${label} profiling failed`);
+
+      // File IS saved and dataset IS registered — don't crash with 500.
+      // Return a partial result so the frontend shows the dataset with a
+      // clear error instead of a generic "Internal server error".
+      const updatedDataset = updateDataset(datasetId, { status: 'error' })!;
+
+      return {
+        agent: this.role,
+        dataset: updatedDataset,
+        profile: {
+          rowCount: 0,
+          columnCount: 0,
+          qualityScore: 0,
+          columns: [],
+          issues: [
+            {
+              severity: 'error',
+              message: `${label} profiling failed: ${errorMsg}`,
+            },
+          ],
+        },
+        confidence: {
+          level: 'low',
+          score: 0,
+          reasoning: `${label} file was saved but profiling failed. The analytics service could not parse this file.`,
+        },
+      };
     }
+
+    logger.info(
+      { datasetId, rows: profileResult.row_count, cols: profileResult.column_count },
+      `Data agent: ${label} profile response received`,
+    );
 
     const updatedDataset = updateDataset(datasetId, {
       status: 'ready',
@@ -122,7 +152,10 @@ class DataAgent {
     })!;
 
     const elapsedMs = Date.now() - startTime;
-    logger.info({ datasetId, elapsedMs, rows: profileResult.row_count }, 'Data agent: CSV profiling complete');
+    logger.info(
+      { datasetId, elapsedMs, rows: profileResult.row_count, capability: 'analysis_ready' },
+      `Data agent: ${label} profiling complete`,
+    );
 
     const qualityScore = profileResult.quality_score;
     return {
@@ -143,75 +176,6 @@ class DataAgent {
         issues: profileResult.issues,
       },
       confidence: this.makeConfidence(qualityScore),
-    };
-  }
-
-  private async handleExcelIngest(
-    datasetId: string,
-    request: IngestAndProfileRequest,
-    _storagePath: string,
-    startTime: number,
-  ): Promise<IngestAndProfileResult> {
-    const updatedDataset = updateDataset(datasetId, {
-      status: 'ready',
-      capability: 'ingest_only',
-    })!;
-
-    logger.info({ datasetId, elapsedMs: Date.now() - startTime }, 'Data agent: Excel ingested (profiling pending)');
-
-    return {
-      agent: this.role,
-      dataset: updatedDataset,
-      profile: {
-        rowCount: 0,
-        columnCount: 0,
-        qualityScore: 0,
-        columns: [],
-        issues: [
-          {
-            severity: 'info',
-            message: `Excel file "${request.filename}" accepted and stored. Tabular profiling for .xlsx will be available when the Excel parser is connected. Convert to CSV for immediate profiling.`,
-          },
-        ],
-      },
-      confidence: {
-        level: 'low',
-        score: 0.2,
-        reasoning: 'File ingested but not yet profiled — Excel parsing pipeline pending',
-      },
-    };
-  }
-
-  private handlePdfIngest(
-    datasetId: string,
-    request: IngestAndProfileRequest,
-    _storagePath: string,
-    startTime: number,
-  ): IngestAndProfileResult {
-    const updatedDataset = updateDataset(datasetId, { status: 'ready', capability: 'ingest_only' })!;
-
-    logger.info({ datasetId, elapsedMs: Date.now() - startTime }, 'Data agent: PDF ingested (document pipeline pending)');
-
-    return {
-      agent: this.role,
-      dataset: updatedDataset,
-      profile: {
-        rowCount: 0,
-        columnCount: 0,
-        qualityScore: 0,
-        columns: [],
-        issues: [
-          {
-            severity: 'info',
-            message: `PDF document "${request.filename}" accepted and stored. Document ingestion and text extraction will be available when the PDF parsing pipeline is connected.`,
-          },
-        ],
-      },
-      confidence: {
-        level: 'low',
-        score: 0.1,
-        reasoning: 'Document ingested but not yet analyzed — PDF extraction pipeline pending',
-      },
     };
   }
 
