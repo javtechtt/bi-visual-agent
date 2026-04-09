@@ -371,21 +371,35 @@ class StatisticalService:
         insights: list[Insight] = []
         methods: list[str] = []
 
+        # If a focus_column is specified, narrow the DataFrame before analysis.
+        # This scopes KPI/anomaly/trend to a single metric for focused follow-ups.
+        focus_col = parameters.get("focus_column")
+        analysis_df = df
+        if isinstance(focus_col, str) and focus_col in df.columns:
+            # Keep the focus column plus any date/key columns for trend detection
+            keep = [focus_col]
+            for c in df.columns:
+                name = c.lower()
+                if any(h in name for h in ("date", "time", "timestamp", "dt", "day", "month")):
+                    keep.append(c)
+            analysis_df = df.select(list(dict.fromkeys(keep)))  # dedupe, preserve order
+            methods.append(f"Focused on: {focus_col}")
+
         if action == "kpi":
-            insights = self.compute_kpis(df)
+            insights = self.compute_kpis(analysis_df)
             methods.append("Summary statistics (mean, median, std, range)")
         elif action == "anomaly":
             threshold = float(parameters.get("threshold", 2.5))
-            insights = self.detect_anomalies(df, threshold=threshold)
+            insights = self.detect_anomalies(analysis_df, threshold=threshold)
             methods.append(f"Z-score (threshold={threshold}) + IQR outlier detection")
         elif action == "trend":
-            insights = self.detect_trends(df)
+            insights = self.detect_trends(analysis_df)
             methods.append("Linear regression trend analysis with significance testing")
         else:
             # Run all three for general analysis
-            insights.extend(self.compute_kpis(df))
-            insights.extend(self.detect_anomalies(df))
-            insights.extend(self.detect_trends(df))
+            insights.extend(self.compute_kpis(analysis_df))
+            insights.extend(self.detect_anomalies(analysis_df))
+            insights.extend(self.detect_trends(analysis_df))
             methods.extend([
                 "Summary statistics",
                 "Z-score + IQR anomaly detection",

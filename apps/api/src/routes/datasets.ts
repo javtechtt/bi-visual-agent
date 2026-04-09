@@ -138,11 +138,19 @@ router.post('/:id/analyze', async (req, res, next) => {
 
     const action = (req.body.action as string) ?? 'all';
     const parameters = (req.body.parameters as Record<string, unknown>) ?? {};
+    const query = req.body.query as string | undefined;
+    const followUpContext = req.body.context as Record<string, unknown> | undefined;
 
-    logger.info({ datasetId: dataset.id, action }, 'Analyze request received');
+    logger.info({ datasetId: dataset.id, action, query: query?.slice(0, 80) }, 'Analyze request received');
 
     const result = await analyticsAgent.analyze(
-      { datasetId: dataset.id, action: action as 'kpi' | 'anomaly' | 'trend' | 'all', parameters },
+      {
+        datasetId: dataset.id,
+        action: action as 'kpi' | 'anomaly' | 'trend' | 'all' | 'follow_up',
+        parameters,
+        query,
+        context: followUpContext as { metric?: string; insightType?: string } | undefined,
+      },
       {
         sessionId: (req.body.sessionId as string) ?? crypto.randomUUID(),
         userId: 'demo-user',

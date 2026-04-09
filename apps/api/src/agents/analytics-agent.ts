@@ -6,11 +6,16 @@ import {
   type AnalyticsInsight,
 } from '../services/analytics-client.js';
 import { getDataset } from '../services/dataset-store.js';
+import { interpretQuery, type FollowUpContext, type InterpretedIntent } from '../services/query-interpreter.js';
 
 export interface AnalyticsAgentRequest {
   datasetId: string;
-  action: 'kpi' | 'anomaly' | 'trend' | 'all';
+  action: 'kpi' | 'anomaly' | 'trend' | 'all' | 'follow_up';
   parameters?: Record<string, unknown>;
+  /** For follow_up action: the natural-language query */
+  query?: string;
+  /** For follow_up action: context from the originating insight */
+  context?: FollowUpContext;
 }
 
 export interface VisualSpec {
@@ -33,6 +38,12 @@ export interface AnalyticsAgentResult {
     followUps: string[];
     supportingData: Record<string, unknown> | null;
   }[];
+  interpretation?: {
+    intent: string;
+    focusColumn: string | null;
+    confident: boolean;
+    originalQuery: string;
+  };
   metadata: {
     processingTimeMs: number;
     rowsAnalyzed: number;
@@ -59,14 +70,37 @@ class AnalyticsAgent {
     request: AnalyticsAgentRequest,
     context: AgentContext,
   ): Promise<AnalyticsAgentResult> {
-    const { datasetId, action, parameters = {} } = request;
-    logger.info({ sessionId: context.sessionId, datasetId, action }, 'Analytics agent: running analysis');
+    const { datasetId, parameters = {} } = request;
+    let { action } = request;
 
-    // Look up dataset to get file path for the Python service
+    // Look up dataset to get file path and column names for the Python service
     const dataset = getDataset(datasetId);
     if (dataset?.storagePath) {
       parameters.file_path = dataset.storagePath;
     }
+
+    // Interpret follow-up queries into structured intents
+    let interpretation: InterpretedIntent | null = null;
+    if (action === 'follow_up' && request.query) {
+      const datasetColumns = dataset?.profile
+        ? ((dataset.profile as Record<string, unknown>).columns as { name: string }[] | undefined)?.map((c) => c.name) ?? []
+        : [];
+
+      interpretation = interpretQuery(request.query, {
+        ...request.context,
+        datasetColumns,
+      });
+
+      action = interpretation.action;
+      Object.assign(parameters, interpretation.parameters);
+
+      logger.info(
+        { datasetId, intent: interpretation.intent, resolvedAction: action, focusColumn: interpretation.focusColumn, confident: interpretation.confident },
+        'Analytics agent: follow-up interpreted',
+      );
+    }
+
+    logger.info({ sessionId: context.sessionId, datasetId, action }, 'Analytics agent: running analysis');
 
     const result: AnalyticsResult = await analyzeDataset(
       datasetId,
@@ -95,6 +129,14 @@ class AnalyticsAgent {
     return {
       agent: this.role,
       datasetId,
+      ...(interpretation ? {
+        interpretation: {
+          intent: interpretation.intent,
+          focusColumn: interpretation.focusColumn,
+          confident: interpretation.confident,
+          originalQuery: interpretation.originalQuery,
+        },
+      } : {}),
       insights: result.insights.map((i: AnalyticsInsight) => ({
         title: i.title,
         description: i.description,

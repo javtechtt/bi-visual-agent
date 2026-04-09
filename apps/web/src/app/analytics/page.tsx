@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/app-shell';
-import { InsightsView, type AnalyticsData } from '@/components/datasets/insights-view';
+import { InsightsView, type AnalyticsData, type FollowUpRequest } from '@/components/datasets/insights-view';
 import { api } from '@/lib/api-client';
 
 interface DatasetEntry {
@@ -63,14 +63,17 @@ export default function AnalyticsPage() {
   }, [selectedId]);
 
   const handleAnalyze = useCallback(
-    async (action: 'kpi' | 'anomaly' | 'trend' | 'all') => {
+    async (action: 'kpi' | 'anomaly' | 'trend' | 'all' | 'follow_up', followUp?: FollowUpRequest) => {
       if (!selected) return;
       setAnalyzeState('running');
       setError(null);
       try {
         const data = await api.post<AnalyticsData>(
           `/api/v1/datasets/${selected.id}/analyze`,
-          { action },
+          {
+            action,
+            ...(followUp ? { query: followUp.query, context: followUp.context } : {}),
+          },
         );
         setLiveResult(data);
         setAnalyzeState('done');
@@ -244,7 +247,7 @@ export default function AnalyticsPage() {
         )}
 
         {/* Results */}
-        {displayResult && <InsightsView data={displayResult} onFollowUp={(_q) => handleAnalyze('all')} />}
+        {displayResult && <InsightsView data={displayResult} onFollowUp={(req) => handleAnalyze('follow_up', req)} />}
 
         {/* No results yet for selected dataset */}
         {selected && selected.capability === 'analysis_ready' && !displayResult && analyzeState === 'idle' && (

@@ -45,7 +45,12 @@ export interface AnalyticsData {
   confidence: { level: string; score: number; reasoning: string };
 }
 
-export function InsightsView({ data, onFollowUp }: { data: AnalyticsData; onFollowUp?: (query: string) => void }) {
+export interface FollowUpRequest {
+  query: string;
+  context: { metric?: string; insightType?: string };
+}
+
+export function InsightsView({ data, onFollowUp }: { data: AnalyticsData; onFollowUp?: (req: FollowUpRequest) => void }) {
   const { insights, metadata, confidence } = data;
 
   const kpiInsights = insights.filter((i) => i.visualization?.chartType === 'kpi_card');
@@ -108,7 +113,7 @@ export function InsightsView({ data, onFollowUp }: { data: AnalyticsData; onFoll
 
 // ─── KPI Card ───────────────────────────────────────────────
 
-function KpiInsightCard({ insight, onFollowUp }: { insight: InsightData; onFollowUp?: (query: string) => void }) {
+function KpiInsightCard({ insight, onFollowUp }: { insight: InsightData; onFollowUp?: (req: FollowUpRequest) => void }) {
   const kpiData = insight.visualization?.data[0] as Record<string, number> | undefined;
   if (!kpiData) return null;
 
@@ -132,14 +137,14 @@ function KpiInsightCard({ insight, onFollowUp }: { insight: InsightData; onFollo
       </div>
       {visual && visual.data.length > 0 && <InsightChart spec={visual} compact />}
       <p className="mt-2 text-xs text-muted-foreground">{insight.confidence.reasoning}</p>
-      <FollowUpButtons followUps={insight.followUps} onFollowUp={onFollowUp} />
+      <FollowUpButtons insight={insight} onFollowUp={onFollowUp} />
     </div>
   );
 }
 
 // ─── Chart Card ─────────────────────────────────────────────
 
-function ChartInsightCard({ insight, onFollowUp }: { insight: InsightData; onFollowUp?: (query: string) => void }) {
+function ChartInsightCard({ insight, onFollowUp }: { insight: InsightData; onFollowUp?: (req: FollowUpRequest) => void }) {
   const viz = insight.visualization;
   const visual = insight.visual;
   if (!viz && !visual) return null;
@@ -164,7 +169,7 @@ function ChartInsightCard({ insight, onFollowUp }: { insight: InsightData; onFol
       {visual && visual.data.length > 0 && <InsightChart spec={visual} />}
 
       <p className="mt-2 text-xs text-muted-foreground">{insight.confidence.reasoning}</p>
-      <FollowUpButtons followUps={insight.followUps} onFollowUp={onFollowUp} />
+      <FollowUpButtons insight={insight} onFollowUp={onFollowUp} />
     </div>
   );
 }
@@ -192,15 +197,24 @@ function TextInsightCard({ insight }: { insight: InsightData }) {
 
 // ─── Follow-up Buttons ─────────────────────────────────────
 
-function FollowUpButtons({ followUps, onFollowUp }: { followUps?: string[]; onFollowUp?: (query: string) => void }) {
+function FollowUpButtons({ insight, onFollowUp }: { insight: InsightData; onFollowUp?: (req: FollowUpRequest) => void }) {
+  const { followUps } = insight;
   if (!followUps || followUps.length === 0 || !onFollowUp) return null;
+
+  // Extract metric from insight title: "Revenue Summary" → "Revenue", "Anomalies in Discount Pct" → "Discount Pct"
+  const metric = extractMetric(insight.title);
+  const insightType = insight.title.toLowerCase().includes('anomal')
+    ? 'anomaly'
+    : insight.title.toLowerCase().includes('trend')
+      ? 'trend'
+      : 'kpi';
 
   return (
     <div className="mt-2.5 flex flex-wrap gap-1.5">
       {followUps.map((q, i) => (
         <button
           key={i}
-          onClick={() => onFollowUp(q)}
+          onClick={() => onFollowUp({ query: q, context: { metric, insightType } })}
           className="rounded-full border border-indigo-200 bg-indigo-50/50 px-2.5 py-1 text-[11px] text-indigo-700 transition-colors hover:border-indigo-400 hover:bg-indigo-100"
         >
           {q}
@@ -208,6 +222,14 @@ function FollowUpButtons({ followUps, onFollowUp }: { followUps?: string[]; onFo
       ))}
     </div>
   );
+}
+
+function extractMetric(title: string): string {
+  return title
+    .replace(/\s+Summary$/, '')
+    .replace(/^Anomalies in\s+/, '')
+    .replace(/\s+Trend:.*$/, '')
+    .trim();
 }
 
 // ─── Helpers ────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
 import { api } from '@/lib/api-client';
 import { ProfileView, type ProfileData } from './profile-view';
-import { InsightsView, type AnalyticsData } from './insights-view';
+import { InsightsView, type AnalyticsData, type FollowUpRequest } from './insights-view';
 import type { DatasetSummary } from './dataset-list';
 
 type AnalyzeState = 'idle' | 'running' | 'done' | 'error';
@@ -77,14 +77,17 @@ export function DatasetDetail({ dataset }: { dataset: DatasetSummary }) {
   }, [dataset]);
 
   const handleAnalyze = useCallback(
-    async (action: 'kpi' | 'anomaly' | 'trend' | 'all') => {
+    async (action: 'kpi' | 'anomaly' | 'trend' | 'all' | 'follow_up', followUp?: FollowUpRequest) => {
       setAnalyzeState('running');
       setError(null);
       setAnalyticsResult(null);
       try {
         const data = await api.post<AnalyticsData>(
           `/api/v1/datasets/${dataset.id}/analyze`,
-          { action },
+          {
+            action,
+            ...(followUp ? { query: followUp.query, context: followUp.context } : {}),
+          },
         );
         setAnalyticsResult(data);
         setAnalyzeState('done');
@@ -152,7 +155,7 @@ export function DatasetDetail({ dataset }: { dataset: DatasetSummary }) {
         </div>
       )}
 
-      {analyticsResult && <InsightsView data={analyticsResult} onFollowUp={(_q) => handleAnalyze('all')} />}
+      {analyticsResult && <InsightsView data={analyticsResult} onFollowUp={(req) => handleAnalyze('follow_up', req)} />}
     </div>
   );
 }
