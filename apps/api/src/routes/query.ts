@@ -4,8 +4,7 @@ import { logger } from '../logger.js';
 
 const router = Router();
 
-// Chat endpoint — delegates to orchestrator.query()
-router.post('/chat', async (req, res, next) => {
+router.post('/', async (req, res, next) => {
   try {
     const query = req.body.query;
     if (!query || typeof query !== 'string' || !query.trim()) {
@@ -17,7 +16,8 @@ router.post('/chat', async (req, res, next) => {
       return;
     }
 
-    logger.info({ query: query.slice(0, 100) }, 'Chat message received');
+    logger.info({ query: query.slice(0, 100) }, 'Query endpoint received');
+
     const result = await orchestrator.query(query.trim());
 
     res.json({
@@ -26,22 +26,9 @@ router.post('/chat', async (req, res, next) => {
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    logger.error({ err }, 'Chat query failed');
+    logger.error({ err }, 'Query failed');
     next(err);
   }
 });
 
-router.get('/sessions/:sessionId/messages', async (req, res, next) => {
-  try {
-    const { sessionId } = req.params;
-    res.json({
-      data: { sessionId, messages: [] },
-      requestId: req.requestId,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-export const agentRoutes = router;
+export const queryRoutes = router;

@@ -51,7 +51,14 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   logger.error({ err, requestId }, 'Unhandled error');
 
   const status = 'status' in err && typeof err.status === 'number' ? err.status : 500;
-  const message = status === 500 ? 'Internal server error' : (err as Error).message;
+  const errMessage = err instanceof Error ? err.message : 'Unknown error';
+
+  // Surface the actual error message in development so upstream service
+  // failures (e.g. analytics service) are diagnosable. In production, hide
+  // internal details behind a generic message.
+  const message = process.env.NODE_ENV === 'production' && status === 500
+    ? 'Internal server error'
+    : errMessage;
 
   res.status(status).json({
     error: {

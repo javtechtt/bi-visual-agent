@@ -18,17 +18,20 @@
     "db:generate": "pnpm --filter @bi/api db:generate",
     "db:migrate": "pnpm --filter @bi/api db:migrate",
     "db:studio": "pnpm --filter @bi/api db:studio",
-    "dev:web": "pnpm --filter @bi/web dev",
-    "dev:api": "pnpm --filter @bi/api dev",
     "dev:worker": "pnpm --filter @bi/worker dev",
-    "dev:analytics": "cd apps/analytics && uvicorn src.main:app --reload --port 8100",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:build": "docker compose build",
-    "format": "prettier --write \"**/*.{ts,tsx,json,md}\""
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "dev:infra": "docker compose up -d postgres redis",
+    "dev:analytics": "cd apps/analytics && .venv\\Scripts\\python -m uvicorn src.main:app --reload --port 8101",
+    "dev:api": "pnpm --filter @bi/api dev",
+    "dev:web": "pnpm --filter @bi/web dev",
+    "dev:all": "concurrently -n INFRA,ANALYTICS,API,WEB -c yellow,cyan,green,magenta \"pnpm dev:infra\" \"pnpm dev:analytics\" \"pnpm dev:api\" \"pnpm dev:web\""
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "concurrently": "^9.2.1",
     "prettier": "^3.4.2",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2"

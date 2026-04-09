@@ -127,7 +127,7 @@ router.post('/:id/analyze', async (req, res, next) => {
       res.status(422).json({
         error: {
           code: 'ANALYSIS_NOT_AVAILABLE',
-          message: `${typeLabel} "${dataset.name}" has been accepted and stored, but analytics requires a profiled tabular dataset. Upload a CSV for immediate analysis.`,
+          message: `${typeLabel} "${dataset.name}" has been accepted and stored, but analytics requires a profiled tabular dataset. Upload a CSV or Excel file for immediate analysis.`,
           details: { capability: dataset.capability, sourceType: dataset.sourceType },
         },
         requestId: req.requestId,
