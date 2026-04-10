@@ -2,7 +2,11 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Send, Sparkles, Loader2, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
-import { api, ApiRequestError } from '@/lib/api-client';
+import {
+  ResponsiveContainer,
+  LineChart, Line, BarChart, Bar, Cell,
+  XAxis, YAxis, Tooltip,
+} from 'recharts';
 import type { OrbState } from '@/components/ai/voice-orb';
 
 interface RoutingDecision {
@@ -38,13 +42,21 @@ interface AdvisoryData {
   decisionSupport?: DecisionSupport;
 }
 
-interface QueryResponse {
-  query: string;
-  routing: RoutingDecision;
-  agentOutputs: Record<string, unknown>[];
-  advisory: AdvisoryData | null;
-  summary: string;
-  timestamp: string;
+
+interface VisualSpec {
+  type: string;
+  x: string;
+  y: string;
+  title: string;
+  data: Record<string, unknown>[];
+}
+
+interface StreamInsight {
+  title: string;
+  description: string;
+  confidence: { level: string; score: number; reasoning: string };
+  visual?: VisualSpec | null;
+  followUps?: string[];
 }
 
 interface ChatMessage {
@@ -53,8 +65,14 @@ interface ChatMessage {
   content: string;
   routing?: RoutingDecision;
   advisory?: AdvisoryData | null;
+  /** Visuals that arrived early via streaming */
+  visuals?: StreamInsight[];
+  /** Follow-up suggestions */
+  streamFollowUps?: string[];
   timestamp: Date;
   error?: boolean;
+  /** True while the message is still being assembled */
+  streaming?: boolean;
 }
 
 interface ChatPanelProps {
@@ -91,8 +109,11 @@ export function ChatPanel({ onRegisterSubmit, onResponse, voiceState }: ChatPane
     const query = (overrideQuery ?? input).trim();
     if (!query || sending) return;
 
+    const userMsgId = crypto.randomUUID();
+    const agentMsgId = crypto.randomUUID();
+
     setMessages((prev) => [...prev, {
-      id: crypto.randomUUID(),
+      id: userMsgId,
       role: 'user',
       content: query,
       timestamp: new Date(),
@@ -100,28 +121,81 @@ export function ChatPanel({ onRegisterSubmit, onResponse, voiceState }: ChatPane
     if (!overrideQuery) setInput('');
     setSending(true);
 
+    // Add a placeholder agent message that will be progressively filled
+    setMessages((prev) => [...prev, {
+      id: agentMsgId,
+      role: 'agent',
+      content: '',
+      timestamp: new Date(),
+      streaming: true,
+    }]);
+
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+
     try {
-      const data = await api.post<QueryResponse>('/api/v1/query', { query });
+      const response = await fetch(
+        `${apiBase}/api/v1/query/stream?q=${encodeURIComponent(query)}`,
+      );
 
-      setMessages((prev) => [...prev, {
-        id: crypto.randomUUID(),
-        role: 'agent',
-        content: data.summary,
-        routing: data.routing,
-        advisory: data.advisory,
-        timestamp: new Date(),
-      }]);
+      if (!response.ok || !response.body) {
+        throw new Error(`Stream failed: ${response.status}`);
+      }
 
-      // Notify parent (for voice auto-speak)
-      onResponse?.({ summary: data.summary, advisory: data.advisory });
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() ?? '';
+
+        for (const chunk of lines) {
+          const dataLine = chunk.split('\n').find((l) => l.startsWith('data: '));
+          if (!dataLine) continue;
+
+          const event = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
+          const stage = event.stage as string;
+
+          if (stage === 'visual_ready') {
+            const insights = event.insights as StreamInsight[];
+            setMessages((prev) => prev.map((m) =>
+              m.id === agentMsgId ? { ...m, visuals: insights } : m,
+            ));
+          }
+
+          if (stage === 'narrative_ready') {
+            const summary = event.summary as string;
+            const advisory = event.advisory as AdvisoryData | null;
+            setMessages((prev) => prev.map((m) =>
+              m.id === agentMsgId ? { ...m, content: summary, advisory } : m,
+            ));
+            onResponse?.({ summary, advisory });
+          }
+
+          if (stage === 'followups_ready') {
+            const followUps = event.followUps as string[];
+            setMessages((prev) => prev.map((m) =>
+              m.id === agentMsgId ? { ...m, streamFollowUps: followUps } : m,
+            ));
+          }
+
+          if (stage === 'done') {
+            setMessages((prev) => prev.map((m) =>
+              m.id === agentMsgId ? { ...m, streaming: false } : m,
+            ));
+          }
+        }
+      }
     } catch (err) {
-      setMessages((prev) => [...prev, {
-        id: crypto.randomUUID(),
-        role: 'agent',
-        content: err instanceof ApiRequestError ? err.message : 'Something went wrong.',
-        timestamp: new Date(),
-        error: true,
-      }]);
+      setMessages((prev) => prev.map((m) =>
+        m.id === agentMsgId
+          ? { ...m, content: err instanceof Error ? err.message : 'Something went wrong.', error: true, streaming: false }
+          : m,
+      ));
     } finally {
       setSending(false);
     }
@@ -160,22 +234,57 @@ export function ChatPanel({ onRegisterSubmit, onResponse, voiceState }: ChatPane
               >
                 <div className="flex items-center gap-1.5">
                   {msg.error && <AlertCircle className="h-3 w-3 text-error" />}
+                  {msg.streaming && !msg.error && <Loader2 className="h-3 w-3 animate-spin text-accent-cyan" />}
                   <p className="text-xs font-medium text-muted-foreground">
                     {msg.role === 'user' ? 'You' : 'BI Agent'}
                   </p>
                 </div>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{msg.content}</p>
+
+                {/* Visuals arrive FIRST — chart appears before narrative */}
+                {msg.visuals && msg.visuals.length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    {msg.visuals.map((insight, vi) => (
+                      insight.visual ? (
+                        <div key={vi} className="rounded-lg border border-border bg-background/50 p-3">
+                          <p className="mb-1 text-xs font-semibold text-accent-cyan">{insight.visual.title}</p>
+                          <StreamChart spec={insight.visual} />
+                          <p className="mt-1 text-[11px] text-muted-foreground">{insight.description}</p>
+                        </div>
+                      ) : null
+                    ))}
+                  </div>
+                )}
+
+                {/* Narrative text — arrives after visuals */}
+                {msg.content && (
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{msg.content}</p>
+                )}
+
+                {/* Streaming indicator while waiting for narrative */}
+                {msg.streaming && !msg.content && !msg.visuals && (
+                  <p className="mt-1 text-xs text-muted-foreground">Analyzing...</p>
+                )}
               </div>
+
+              {/* Follow-ups from stream */}
+              {msg.streamFollowUps && msg.streamFollowUps.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {msg.streamFollowUps.map((q, i) => (
+                    <button
+                      key={i}
+                      onClick={() => handleSubmit(q)}
+                      className="transition-theme rounded-full border border-cyan-500/20 bg-cyan-500/5 px-2.5 py-1 text-[11px] text-cyan-400 hover:border-cyan-400/40 hover:bg-cyan-500/10"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {msg.advisory && <AdvisoryPanel advisory={msg.advisory} onFollowUp={(q) => handleSubmit(q)} />}
               {msg.routing && <RoutingBadge routing={msg.routing} />}
             </div>
           ))}
-          {sending && (
-            <div className="flex items-center gap-2 rounded-lg bg-surface p-3">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-cyan" />
-              <span className="text-xs text-muted-foreground">Routing query to agents...</span>
-            </div>
-          )}
         </div>
       </div>
 
@@ -366,4 +475,58 @@ function AdvisoryPanel({ advisory, onFollowUp }: { advisory: AdvisoryData; onFol
       )}
     </div>
   );
+}
+
+// ─── Stream Chart (inline in chat) ─────────────────────────
+
+function StreamChart({ spec }: { spec: VisualSpec }) {
+  if (!spec.data.length) return null;
+
+  const tooltipStyle = {
+    fontSize: 11,
+    borderRadius: 8,
+    border: '1px solid #1e2130',
+    backgroundColor: '#10121a',
+    color: '#e8eaed',
+  };
+
+  if (spec.type === 'line') {
+    return (
+      <div style={{ width: '100%', height: 140 }}>
+        <ResponsiveContainer>
+          <LineChart data={spec.data} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+            <XAxis dataKey={spec.x} tick={{ fontSize: 9, fill: '#7a8194' }} axisLine={{ stroke: '#1e2130' }} tickLine={false} />
+            <YAxis tick={{ fontSize: 9, fill: '#7a8194' }} axisLine={false} tickLine={false} width={40} />
+            <Tooltip contentStyle={tooltipStyle} />
+            <Line type="monotone" dataKey={spec.y} stroke="#22d3ee" strokeWidth={2} dot={spec.data.length <= 20 ? { r: 2.5, fill: '#22d3ee' } : false} />
+            {spec.data[0] && 'trend' in spec.data[0] && (
+              <Line type="monotone" dataKey="trend" stroke="#6366f1" strokeWidth={1.5} strokeDasharray="5 3" dot={false} />
+            )}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  if (spec.type === 'bar' || spec.type === 'histogram') {
+    const hasAnomaly = spec.data.some((d) => d.anomaly === 1);
+    return (
+      <div style={{ width: '100%', height: 120 }}>
+        <ResponsiveContainer>
+          <BarChart data={spec.data} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+            <XAxis dataKey={spec.x} tick={{ fontSize: 8, fill: '#7a8194' }} axisLine={{ stroke: '#1e2130' }} tickLine={false} />
+            <YAxis tick={{ fontSize: 9, fill: '#7a8194' }} axisLine={false} tickLine={false} width={32} />
+            <Tooltip contentStyle={tooltipStyle} />
+            <Bar dataKey={spec.y} radius={[3, 3, 0, 0]} maxBarSize={24}>
+              {spec.data.map((entry, i) => (
+                <Cell key={i} fill={hasAnomaly && entry.anomaly === 1 ? '#f59e0b' : '#6366f1'} opacity={hasAnomaly && entry.anomaly !== 1 ? 0.4 : 0.8} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  return null;
 }

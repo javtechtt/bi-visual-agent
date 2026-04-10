@@ -247,71 +247,20 @@ async function executeRouting(
     }
   }
 
-  // Build summary: advisory summary if available, otherwise template
-  let summary: string;
-  if (advisory) {
-    const parts = [advisory.summary];
-    if (advisory.topInsights.length > 0) {
-      parts.push('');
-      for (const ti of advisory.topInsights) {
-        const badge = ti.importance === 'high' ? '[!]' : ti.importance === 'medium' ? '[~]' : '[-]';
-        parts.push(`${badge} ${ti.insight}`);
-      }
-    }
-    if (advisory.implications.length > 0) {
-      parts.push('');
-      for (const imp of advisory.implications) {
-        parts.push(`→ ${imp}`);
-      }
-    }
-    if (advisory.hypotheses.length > 0) {
-      parts.push('');
-      parts.push('Possible explanations:');
-      for (const h of advisory.hypotheses) {
-        parts.push(`? ${h.explanation} [${h.confidence}]`);
-        parts.push(`  Validate: ${h.validation}`);
-      }
-    }
-    if (advisory.decisionSupport) {
-      const ds = advisory.decisionSupport;
-      if (ds.priorityFocus.length > 0) {
-        parts.push('');
-        parts.push('Priority focus:');
-        for (const pf of ds.priorityFocus) {
-          parts.push(`  ▸ ${pf}`);
-        }
-      }
-      if (ds.managementQuestions.length > 0) {
-        parts.push('');
-        parts.push('Questions to answer:');
-        for (const q of ds.managementQuestions) {
-          parts.push(`  • ${q}`);
-        }
-      }
-    }
-    parts.push('');
-    parts.push(advisory.confidenceAssessment);
-    summary = parts.join('\n');
-  } else {
-    // Fallback template for profile-only or error cases
-    const summaryParts: string[] = [];
-    for (const output of agentOutputs) {
-      if (output.type === 'profile') {
-        summaryParts.push(
-          `Data profile: ${output.datasetName} has ${output.rowCount} rows and ${output.columnCount} columns (quality: ${output.qualityScore}).`,
-        );
-      }
-      if (output.type === 'error') {
-        summaryParts.push(String(output.message));
-      }
-    }
-    summary = summaryParts.join('\n');
-  }
-
-  return { agentOutputs, advisory, summary };
+  return { agentOutputs, advisory, summary: buildSummary(advisory, agentOutputs) };
 }
 
 // ─── Public API ─────────────────────────────────────────────
+
+// ─── Stream Events ─────────────────────────────────────────
+
+export type StreamEvent =
+  | { stage: 'query_received'; query: string }
+  | { stage: 'routing_done'; routing: RoutingDecision }
+  | { stage: 'visual_ready'; insights: Record<string, unknown>[] }
+  | { stage: 'narrative_ready'; summary: string; advisory: AdvisoryOutput | null }
+  | { stage: 'followups_ready'; followUps: string[] }
+  | { stage: 'done'; result: QueryResult };
 
 class Orchestrator {
   async query(userQuery: string): Promise<QueryResult> {
@@ -333,6 +282,106 @@ class Orchestrator {
     };
   }
 
+  /**
+   * Progressive query execution — emits events at each stage so the
+   * frontend can render visuals before the narrative is ready.
+   */
+  async *queryStream(userQuery: string): AsyncGenerator<StreamEvent> {
+    yield { stage: 'query_received', query: userQuery };
+
+    const datasets = listDatasets();
+    const routing = await routeWithLLM(userQuery, datasets);
+    yield { stage: 'routing_done', routing };
+
+    if (routing.intent === 'unsupported' || !routing.targetDatasetId) {
+      const summary = routing.reasoning;
+      yield { stage: 'narrative_ready', summary, advisory: null };
+      yield { stage: 'done', result: { query: userQuery, routing, agentOutputs: [], advisory: null, summary, timestamp: new Date().toISOString() } };
+      return;
+    }
+
+    const datasetId = routing.targetDatasetId;
+    const dataset = getDataset(datasetId);
+    if (!dataset) {
+      const summary = `Dataset ${datasetId} not found.`;
+      yield { stage: 'narrative_ready', summary, advisory: null };
+      yield { stage: 'done', result: { query: userQuery, routing, agentOutputs: [], advisory: null, summary, timestamp: new Date().toISOString() } };
+      return;
+    }
+
+    const agentOutputs: Record<string, unknown>[] = [];
+    const sessionId = crypto.randomUUID();
+    const context = { sessionId, userId: 'demo-user', traceId: crypto.randomUUID(), startedAt: new Date() };
+
+    // ── Profile ──
+    if (routing.actions.includes('data_agent') && dataset.profile) {
+      const profile = dataset.profile as Record<string, unknown>;
+      agentOutputs.push({
+        agent: 'data', type: 'profile', datasetName: dataset.name,
+        rowCount: dataset.rowCount, columnCount: dataset.columnCount,
+        qualityScore: profile.quality_score ?? profile.qualityScore, columns: profile.columns,
+      });
+    }
+
+    // ── Analytics — emit visuals as soon as insights are ready ──
+    let analysisResult: AnalyticsAgentResult | null = null;
+    if (routing.actions.includes('analytics_agent') && dataset.capability === 'analysis_ready') {
+      try {
+        analysisResult = await analyticsAgent.analyze({ datasetId, action: 'all' }, context);
+        updateDataset(datasetId, { lastAnalysis: analysisResult as unknown as Record<string, unknown>, lastAnalyzedAt: new Date().toISOString() });
+        agentOutputs.push({ type: 'analysis', ...analysisResult });
+
+        // Emit visuals EARLY — before advisory runs
+        const insightsWithVisuals = analysisResult.insights.filter((i) => i.visual);
+        if (insightsWithVisuals.length > 0) {
+          yield { stage: 'visual_ready', insights: insightsWithVisuals as unknown as Record<string, unknown>[] };
+        }
+      } catch (err) {
+        logger.error({ err, datasetId }, 'Analytics execution failed');
+        agentOutputs.push({ agent: 'analytics', type: 'error', message: `Analytics failed: ${err instanceof Error ? err.message : 'Unknown error'}` });
+      }
+    }
+
+    // ── Advisory — runs AFTER visual_ready was emitted ──
+    let advisory: AdvisoryOutput | null = null;
+    if (analysisResult) {
+      try {
+        const advisoryInput: AdvisoryInput = {
+          datasetName: dataset.name, rowCount: dataset.rowCount ?? 0, columnCount: dataset.columnCount ?? 0,
+          insights: analysisResult.insights, metadata: analysisResult.metadata, overallConfidence: analysisResult.confidence,
+        };
+        advisory = await advisoryAgent.interpret(advisoryInput, context);
+        agentOutputs.push({ type: 'advisory', ...advisory });
+      } catch (err) {
+        logger.error({ err }, 'Advisory agent failed');
+      }
+    }
+
+    // ── Narrative ──
+    const summary = buildSummary(advisory, agentOutputs);
+    yield { stage: 'narrative_ready', summary, advisory };
+
+    // ── Follow-ups ──
+    const allFollowUps: string[] = [];
+    if (analysisResult) {
+      for (const insight of analysisResult.insights) {
+        if (insight.followUps) allFollowUps.push(...insight.followUps);
+      }
+    }
+    if (advisory?.decisionSupport?.recommendedFollowUps) {
+      allFollowUps.push(...advisory.decisionSupport.recommendedFollowUps);
+    }
+    if (allFollowUps.length > 0) {
+      // Deduplicate
+      yield { stage: 'followups_ready', followUps: [...new Set(allFollowUps)].slice(0, 6) };
+    }
+
+    yield {
+      stage: 'done',
+      result: { query: userQuery, routing, agentOutputs, advisory, summary, timestamp: new Date().toISOString() },
+    };
+  }
+
   // Legacy method for the /agents/chat endpoint
   async handle(request: { sessionId: string; query: string }): Promise<Record<string, unknown>> {
     const result = await this.query(request.query);
@@ -344,6 +393,37 @@ class Orchestrator {
       completedAt: result.timestamp,
     };
   }
+}
+
+// ─── Summary Builder ───────────────────────────────────────
+
+function buildSummary(advisory: AdvisoryOutput | null, agentOutputs: Record<string, unknown>[]): string {
+  if (advisory) {
+    const parts = [advisory.summary];
+    if (advisory.topInsights.length > 0) {
+      parts.push('');
+      for (const ti of advisory.topInsights) {
+        const badge = ti.importance === 'high' ? '[!]' : ti.importance === 'medium' ? '[~]' : '[-]';
+        parts.push(`${badge} ${ti.insight}`);
+      }
+    }
+    if (advisory.implications.length > 0) {
+      parts.push('');
+      for (const imp of advisory.implications) parts.push(`→ ${imp}`);
+    }
+    parts.push('');
+    parts.push(advisory.confidenceAssessment);
+    return parts.join('\n');
+  }
+
+  const summaryParts: string[] = [];
+  for (const output of agentOutputs) {
+    if (output.type === 'profile') {
+      summaryParts.push(`Data profile: ${output.datasetName} has ${output.rowCount} rows and ${output.columnCount} columns (quality: ${output.qualityScore}).`);
+    }
+    if (output.type === 'error') summaryParts.push(String(output.message));
+  }
+  return summaryParts.join('\n');
 }
 
 export const orchestrator = new Orchestrator();
