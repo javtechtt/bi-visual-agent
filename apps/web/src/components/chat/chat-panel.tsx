@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Sparkles, Loader2, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { api, ApiRequestError } from '@/lib/api-client';
+import type { OrbState } from '@/components/ai/voice-orb';
 
 interface RoutingDecision {
   intent: string;
@@ -56,7 +57,19 @@ interface ChatMessage {
   error?: boolean;
 }
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  /** Register an external submit function (e.g. from voice input) */
+  onRegisterSubmit?: (submit: (query: string) => void) => void;
+  /** Called when a response is received (for voice auto-speak) */
+  onResponse?: (response: {
+    summary?: string;
+    advisory?: { summary?: string; topInsights?: { insight: string }[] } | null;
+  }) => void;
+  /** Voice state — shows indicator when active */
+  voiceState?: OrbState;
+}
+
+export function ChatPanel({ onRegisterSubmit, onResponse, voiceState }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -98,6 +111,9 @@ export function ChatPanel() {
         advisory: data.advisory,
         timestamp: new Date(),
       }]);
+
+      // Notify parent (for voice auto-speak)
+      onResponse?.({ summary: data.summary, advisory: data.advisory });
     } catch (err) {
       setMessages((prev) => [...prev, {
         id: crypto.randomUUID(),
@@ -111,11 +127,22 @@ export function ChatPanel() {
     }
   }
 
+  // Register the submit function so the parent (voice) can trigger it
+  useEffect(() => {
+    onRegisterSubmit?.(handleSubmit);
+  }); // intentionally no deps — re-registers on every render to capture latest closure
+
   return (
     <div className="flex h-full flex-col bg-sidebar">
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
         <Sparkles className="h-4 w-4 text-accent-cyan" />
         <h2 className="text-sm font-semibold text-foreground">AI Assistant</h2>
+        {voiceState && voiceState !== 'idle' && (
+          <span className="ml-auto flex items-center gap-1.5 text-[10px] font-medium text-accent-cyan">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-cyan" />
+            {voiceState === 'listening' ? 'Listening' : voiceState === 'thinking' ? 'Processing' : 'Speaking'}
+          </span>
+        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
