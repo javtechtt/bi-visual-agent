@@ -1,6 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
 import type { AgentContext, AgentRoleType } from '@bi/types';
-import { config } from '../config.js';
+import { llmCompleteJSON } from '../services/llm-adapter.js';
 import { logger } from '../logger.js';
 
 // ─── Types ──────────────────────────────────────────────────
@@ -61,20 +60,12 @@ class AdvisoryAgent {
       'Advisory agent: strategic interpretation',
     );
 
-    const apiKey = config.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      logger.info('No ANTHROPIC_API_KEY — using deterministic advisory');
-      return this.deterministicInterpret(input);
-    }
-
-    return this.llmInterpret(input, apiKey);
+    return this.llmInterpret(input);
   }
 
   // ─── LLM Interpretation ─────────────────────────────────
 
-  private async llmInterpret(input: AdvisoryInput, apiKey: string): Promise<AdvisoryOutput> {
-    const client = new Anthropic({ apiKey });
-
+  private async llmInterpret(input: AdvisoryInput): Promise<AdvisoryOutput> {
     const analyticsPayload = JSON.stringify({
       dataset: `${input.datasetName} (${input.rowCount} rows, ${input.columnCount} columns)`,
       overallConfidence: input.overallConfidence,
@@ -134,51 +125,45 @@ Respond with ONLY valid JSON:
   }
 }`;
 
-    try {
-      const response = await client.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 800,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: `Interpret these analytics results strategically:\n\n${analyticsPayload}` }],
-      });
+    const result = await llmCompleteJSON<{
+      summary: string;
+      topInsights: TopInsight[];
+      implications: string[];
+      hypotheses: Hypothesis[];
+      confidenceAssessment: string;
+      decisionSupport?: DecisionSupport;
+    }>({
+      system: systemPrompt,
+      user: `Interpret these analytics results strategically:\n\n${analyticsPayload}`,
+      maxTokens: 800,
+      label: 'advisory-interpretation',
+    });
 
-      const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        logger.warn('Advisory LLM returned no JSON, falling back to deterministic');
-        return this.deterministicInterpret(input);
-      }
-
-      const parsed = JSON.parse(jsonMatch[0]) as {
-        summary: string;
-        topInsights: TopInsight[];
-        implications: string[];
-        hypotheses: Hypothesis[];
-        confidenceAssessment: string;
-        decisionSupport?: DecisionSupport;
-      };
-
-      return {
-        agent: this.role,
-        summary: parsed.summary,
-        topInsights: parsed.topInsights.slice(0, 3),
-        implications: parsed.implications,
-        hypotheses: (parsed.hypotheses ?? []).map((h) => ({
-          explanation: h.explanation,
-          confidence: h.confidence === 'speculative' ? 'speculative' : 'low',
-          validation: h.validation,
-        })),
-        confidenceAssessment: parsed.confidenceAssessment,
-        decisionSupport: parsed.decisionSupport ?? {
-          priorityFocus: [],
-          managementQuestions: [],
-          recommendedFollowUps: [],
-        },
-      };
-    } catch (err) {
-      logger.error({ err }, 'Advisory LLM failed, falling back to deterministic');
+    if (!result) {
+      logger.info('No LLM available for advisory — using deterministic fallback');
       return this.deterministicInterpret(input);
     }
+
+    const parsed = result.data;
+    logger.info({ provider: result.provider, model: result.model }, 'Advisory LLM interpretation complete');
+
+    return {
+      agent: this.role,
+      summary: parsed.summary,
+      topInsights: parsed.topInsights.slice(0, 3),
+      implications: parsed.implications,
+      hypotheses: (parsed.hypotheses ?? []).map((h) => ({
+        explanation: h.explanation,
+        confidence: h.confidence === 'speculative' ? 'speculative' : 'low',
+        validation: h.validation,
+      })),
+      confidenceAssessment: parsed.confidenceAssessment,
+      decisionSupport: parsed.decisionSupport ?? {
+        priorityFocus: [],
+        managementQuestions: [],
+        recommendedFollowUps: [],
+      },
+    };
   }
 
   // ─── Deterministic Fallback ───────────────────────────────

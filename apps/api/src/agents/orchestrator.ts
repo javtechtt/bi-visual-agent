@@ -1,8 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { config } from '../config.js';
 import { listDatasets, getDataset, updateDataset, type DatasetRecord } from '../services/dataset-store.js';
 import { analyticsAgent, type AnalyticsAgentResult } from './analytics-agent.js';
 import { advisoryAgent, type AdvisoryOutput, type AdvisoryInput } from './advisory-agent.js';
+import { llmCompleteJSON } from '../services/llm-adapter.js';
 import { logger } from '../logger.js';
 
 // ─── Routing Decision Schema ────────────────────────────────
@@ -26,14 +25,6 @@ export interface QueryResult {
 // ─── LLM Router ─────────────────────────────────────────────
 
 async function routeWithLLM(query: string, datasets: DatasetRecord[]): Promise<RoutingDecision> {
-  const apiKey = config.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    logger.warn('No ANTHROPIC_API_KEY — using heuristic routing');
-    return heuristicRoute(query, datasets);
-  }
-
-  const client = new Anthropic({ apiKey });
-
   const datasetSummary = datasets.length === 0
     ? 'No datasets uploaded yet.'
     : datasets.map((d) => {
@@ -69,34 +60,26 @@ Rules:
 - If no datasets exist or none are analysis_ready, set intent to "unsupported" with clear reasoning
 - Never fabricate data. Route to agents that can compute real answers.`;
 
-  try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 300,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: query }],
-    });
+  const result = await llmCompleteJSON<RoutingDecision>({
+    system: systemPrompt,
+    user: query,
+    maxTokens: 300,
+    label: 'orchestrator-routing',
+  });
 
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
-    // Extract JSON from response (may have markdown fences)
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      logger.warn({ text }, 'LLM returned no JSON, falling back to heuristic');
-      return heuristicRoute(query, datasets);
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]) as RoutingDecision;
-
-    // Validate
-    if (!['profile', 'analyze', 'summarize', 'unsupported'].includes(parsed.intent)) {
-      return heuristicRoute(query, datasets);
-    }
-
-    return parsed;
-  } catch (err) {
-    logger.error({ err }, 'LLM routing failed, falling back to heuristic');
+  if (!result) {
+    logger.info('No LLM available for routing — using heuristic');
     return heuristicRoute(query, datasets);
   }
+
+  // Validate intent
+  if (!['profile', 'analyze', 'summarize', 'unsupported'].includes(result.data.intent)) {
+    logger.warn({ intent: result.data.intent }, 'LLM returned invalid intent, falling back');
+    return heuristicRoute(query, datasets);
+  }
+
+  logger.info({ provider: result.provider, model: result.model, intent: result.data.intent }, 'LLM routing decision');
+  return result.data;
 }
 
 // ─── Heuristic Fallback Router ──────────────────────────────
