@@ -4,66 +4,37 @@ import { useCallback, useRef, useState, useEffect } from 'react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { ChatPanel } from '@/components/chat/chat-panel';
-import { AssistantHero } from '@/components/ai/assistant-hero';
+import { VoiceOrb } from '@/components/ai/voice-orb';
 import { useVoice, summarizeForSpeech } from '@/hooks/use-voice';
 import { useRealtime } from '@/hooks/use-realtime';
 
-/**
- * Home page — bridges voice/Realtime with the ChatPanel.
- *
- * Strategy:
- *   1. Try to connect to the Realtime WebSocket endpoint
- *   2. If connected → voice flows through OpenAI Realtime (audio in/out, tool calls)
- *   3. If not → falls back to useVoice (Web Speech API) + text query path
- */
 export default function HomePage() {
   const [realtimeActive, setRealtimeActive] = useState(false);
-
-  // Refs to bridge voice → chat panel
   const pendingQueryRef = useRef<string | null>(null);
   const submitRef = useRef<((query: string) => void) | null>(null);
 
-  // ─── Realtime path ────────────────────────────────────────
-
   const realtime = useRealtime({
     onUserTranscript: (text) => {
-      // Show the user's transcribed speech in the chat panel
-      if (submitRef.current && text.trim()) {
-        submitRef.current(text);
-      }
+      if (submitRef.current && text.trim()) submitRef.current(text);
     },
-    onAssistantMessage: (text) => {
-      // The assistant spoke — the audio already played via Realtime.
-      // We don't need to do anything extra here since Realtime handles audio out.
-      // But if the chat panel needs the text, we could add it.
-      void text;
-    },
+    onAssistantMessage: () => {},
   });
 
-  // Auto-connect Realtime on mount
   useEffect(() => {
     realtime.connect();
-    // Check connection after a brief delay
-    const timer = setTimeout(() => {
-      setRealtimeActive(realtime.connected);
-    }, 2000);
+    const timer = setTimeout(() => setRealtimeActive(realtime.connected), 2000);
     return () => clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Track connection state
   useEffect(() => {
     setRealtimeActive(realtime.connected);
   }, [realtime.connected]);
-
-  // ─── Fallback voice path ──────────────────────────────────
 
   const voice = useVoice({
     onTranscript: (text) => {
       voice.setOrbState('thinking');
       pendingQueryRef.current = text;
-      if (submitRef.current) {
-        submitRef.current(text);
-      }
+      if (submitRef.current) submitRef.current(text);
     },
   });
 
@@ -75,17 +46,12 @@ export default function HomePage() {
     summary?: string;
     advisory?: { summary?: string; topInsights?: { insight: string }[] } | null;
   }) => {
-    // Only auto-speak if we're in fallback mode and the query came from voice
     if (!realtimeActive && pendingQueryRef.current) {
       pendingQueryRef.current = null;
-      const spokenSummary = summarizeForSpeech(response);
-      voice.speak(spokenSummary);
+      voice.speak(summarizeForSpeech(response));
     }
   }, [realtimeActive, voice]);
 
-  // ─── Unified interface for the hero/panel ─────────────────
-
-  // Pick whichever system is active
   const activeOrb = realtimeActive ? realtime.orbState : voice.orbState;
   const activeTranscript = realtimeActive ? realtime.transcript : voice.transcript;
   const activeSupported = realtimeActive ? realtime.supported : voice.supported;
@@ -93,52 +59,61 @@ export default function HomePage() {
 
   const handleOrbClick = useCallback(() => {
     if (realtimeActive) {
-      if (realtime.orbState === 'listening') {
-        realtime.stopListening();
-      } else {
-        realtime.startListening();
-      }
+      realtime.orbState === 'listening' ? realtime.stopListening() : realtime.startListening();
     } else {
-      if (voice.orbState === 'listening') {
-        voice.stopListening();
-      } else {
-        voice.startListening();
-      }
+      voice.orbState === 'listening' ? voice.stopListening() : voice.startListening();
     }
   }, [realtimeActive, realtime, voice]);
 
   const handleStopSpeaking = useCallback(() => {
-    if (realtimeActive) {
-      realtime.disconnect();
-      realtime.connect();
-    } else {
-      voice.stopSpeaking();
-    }
+    if (realtimeActive) { realtime.disconnect(); realtime.connect(); }
+    else voice.stopSpeaking();
   }, [realtimeActive, realtime, voice]);
+
+  const orbLabel = activeOrb === 'listening' ? 'Listening...'
+    : activeOrb === 'thinking' ? 'Analyzing...'
+    : activeOrb === 'speaking' ? 'Speaking...'
+    : activeSupported ? 'Tap to speak' : '';
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
-        <main className="flex flex-1 overflow-hidden">
-          <section className="flex flex-1 flex-col overflow-y-auto">
-            <AssistantHero
-              orbState={activeOrb}
-              onOrbClick={handleOrbClick}
-              onStopSpeaking={handleStopSpeaking}
-              transcript={activeTranscript}
-              voiceSupported={activeSupported}
-              voiceError={activeError}
-            />
-          </section>
-          <aside className="hidden w-[440px] border-l border-border bg-sidebar xl:flex xl:flex-col">
-            <ChatPanel
-              onRegisterSubmit={handleChatSubmit}
-              onResponse={handleChatResponse}
-              voiceState={activeOrb}
-            />
-          </aside>
+        <main className="flex flex-1 flex-col overflow-hidden">
+          {/* ─── Assistant-centered layout ─── */}
+          <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden px-4">
+
+            {/* Orb + status — compact, always visible */}
+            <div className="flex shrink-0 flex-col items-center gap-1.5 pb-3 pt-6">
+              <button
+                onClick={activeOrb === 'speaking' ? handleStopSpeaking : handleOrbClick}
+                disabled={!activeSupported && activeOrb === 'idle'}
+                className="transition-transform hover:scale-105 active:scale-95 disabled:opacity-40"
+              >
+                <VoiceOrb state={activeOrb} size={64} intensity={activeOrb === 'idle' ? 0.4 : 0.8} />
+              </button>
+              {orbLabel && (
+                <p className="text-[11px] font-medium text-muted-foreground">{orbLabel}</p>
+              )}
+              {activeOrb === 'listening' && activeTranscript && (
+                <p className="max-w-sm text-center text-xs text-accent-cyan">&ldquo;{activeTranscript}&rdquo;</p>
+              )}
+              {activeError && (
+                <p className="text-[11px] text-error">{activeError}</p>
+              )}
+            </div>
+
+            {/* Conversation — the primary experience */}
+            <div className="flex-1 overflow-hidden">
+              <ChatPanel
+                onRegisterSubmit={handleChatSubmit}
+                onResponse={handleChatResponse}
+                voiceState={activeOrb}
+                embedded
+              />
+            </div>
+          </div>
         </main>
       </div>
     </div>

@@ -85,9 +85,11 @@ interface ChatPanelProps {
   }) => void;
   /** Voice state — shows indicator when active */
   voiceState?: OrbState;
+  /** Embedded mode — no header chrome, transparent bg */
+  embedded?: boolean;
 }
 
-export function ChatPanel({ onRegisterSubmit, onResponse, voiceState }: ChatPanelProps) {
+export function ChatPanel({ onRegisterSubmit, onResponse, voiceState, embedded }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -207,88 +209,108 @@ export function ChatPanel({ onRegisterSubmit, onResponse, voiceState }: ChatPane
   }); // intentionally no deps — re-registers on every render to capture latest closure
 
   return (
-    <div className="flex h-full flex-col bg-sidebar">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <Sparkles className="h-4 w-4 text-accent-cyan" />
-        <h2 className="text-sm font-semibold text-foreground">AI Assistant</h2>
-        {voiceState && voiceState !== 'idle' && (
-          <span className="ml-auto flex items-center gap-1.5 text-[10px] font-medium text-accent-cyan">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-cyan" />
-            {voiceState === 'listening' ? 'Listening' : voiceState === 'thinking' ? 'Processing' : 'Speaking'}
-          </span>
-        )}
-      </div>
+    <div className={`flex h-full flex-col ${embedded ? 'bg-transparent' : 'bg-sidebar'}`}>
+      {/* Header — hidden in embedded mode */}
+      {!embedded && (
+        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+          <Sparkles className="h-4 w-4 text-accent-cyan" />
+          <h2 className="text-sm font-semibold text-foreground">AI Assistant</h2>
+          {voiceState && voiceState !== 'idle' && (
+            <span className="ml-auto flex items-center gap-1.5 text-[10px] font-medium text-accent-cyan">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-cyan" />
+              {voiceState === 'listening' ? 'Listening' : voiceState === 'thinking' ? 'Processing' : 'Speaking'}
+            </span>
+          )}
+        </div>
+      )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
-        <div className="flex flex-col gap-3">
+      {/* Conversation */}
+      <div ref={scrollRef} className={`flex-1 overflow-y-auto ${embedded ? 'px-0 py-2' : 'p-4'}`}>
+        <div className="flex flex-col gap-4">
           {messages.map((msg) => (
-            <div key={msg.id}>
-              <div
-                className={`rounded-lg p-3 ${
-                  msg.role === 'user'
-                    ? 'ml-8 border border-accent-indigo/20 bg-accent-indigo/10'
-                    : msg.error
-                      ? 'border border-error/30 bg-error/10'
-                      : 'bg-surface'
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  {msg.error && <AlertCircle className="h-3 w-3 text-error" />}
-                  {msg.streaming && !msg.error && <Loader2 className="h-3 w-3 animate-spin text-accent-cyan" />}
-                  <p className="text-xs font-medium text-muted-foreground">
-                    {msg.role === 'user' ? 'You' : 'BI Agent'}
-                  </p>
-                </div>
-
-                {/* Visuals arrive FIRST — chart appears before narrative */}
-                {msg.visuals && msg.visuals.length > 0 && (
-                  <div className="mt-2 space-y-2">
-                    {msg.visuals.map((insight, vi) => (
-                      insight.visual ? (
-                        <div key={vi} className="rounded-lg border border-border bg-background/50 p-3">
-                          <p className="mb-1 text-xs font-semibold text-accent-cyan">{insight.visual.title}</p>
-                          <StreamChart spec={insight.visual} />
-                          <p className="mt-1 text-[11px] text-muted-foreground">{insight.description}</p>
-                        </div>
-                      ) : null
-                    ))}
-                  </div>
-                )}
-
-                {/* Narrative text — arrives after visuals */}
-                {msg.content && (
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{msg.content}</p>
-                )}
-
-                {/* Streaming indicator while waiting for narrative */}
-                {msg.streaming && !msg.content && !msg.visuals && (
-                  <p className="mt-1 text-xs text-muted-foreground">Analyzing...</p>
-                )}
-              </div>
-
-              {/* Follow-ups from stream */}
-              {msg.streamFollowUps && msg.streamFollowUps.length > 0 && (
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {msg.streamFollowUps.map((q, i) => (
-                    <button
-                      key={i}
-                      onClick={() => handleSubmit(q)}
-                      className="transition-theme rounded-full border border-cyan-500/20 bg-cyan-500/5 px-2.5 py-1 text-[11px] text-cyan-400 hover:border-cyan-400/40 hover:bg-cyan-500/10"
-                    >
-                      {q}
-                    </button>
-                  ))}
+            <div key={msg.id} className={msg.role === 'user' ? 'flex justify-end' : ''}>
+              {/* ─── User message ─── */}
+              {msg.role === 'user' && (
+                <div className="max-w-[80%] rounded-2xl rounded-br-sm border border-accent-indigo/20 bg-accent-indigo/10 px-4 py-2.5">
+                  <p className="text-sm text-foreground">{msg.content}</p>
                 </div>
               )}
 
-              {msg.advisory && <AdvisoryPanel advisory={msg.advisory} onFollowUp={(q) => handleSubmit(q)} />}
-              {msg.routing && <RoutingBadge routing={msg.routing} />}
+              {/* ─── Agent message ─── */}
+              {msg.role === 'agent' && (
+                <div className="space-y-3">
+                  {/* Streaming state indicator */}
+                  {msg.streaming && !msg.content && !msg.visuals && (
+                    <div className="flex items-center gap-2 py-1">
+                      <div className="flex gap-1">
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent-cyan" style={{ animationDelay: '0ms' }} />
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent-cyan" style={{ animationDelay: '150ms' }} />
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent-cyan" style={{ animationDelay: '300ms' }} />
+                      </div>
+                      <p className="text-xs text-muted-foreground">Analyzing your data...</p>
+                    </div>
+                  )}
+
+                  {/* Visuals arrive FIRST */}
+                  {msg.streaming && msg.visuals && !msg.content && (
+                    <div className="flex items-center gap-2 py-1">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-cyan" />
+                      <p className="text-xs text-muted-foreground">Preparing analysis...</p>
+                    </div>
+                  )}
+
+                  {msg.visuals && msg.visuals.length > 0 && (
+                    <div className="space-y-3">
+                      {msg.visuals.map((insight, vi) => (
+                        insight.visual ? (
+                          <div key={vi} className="overflow-hidden rounded-xl border border-border bg-surface">
+                            <div className="border-b border-border px-4 py-2.5">
+                              <p className="text-xs font-semibold text-accent-cyan">{insight.visual.title}</p>
+                              <p className="mt-0.5 text-[11px] text-muted-foreground">{insight.description}</p>
+                            </div>
+                            <div className="p-3">
+                              <StreamChart spec={insight.visual} />
+                            </div>
+                          </div>
+                        ) : null
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Narrative */}
+                  {msg.content && (
+                    <div className={`rounded-2xl rounded-bl-sm px-4 py-3 ${msg.error ? 'border border-error/30 bg-error/5' : 'bg-surface'}`}>
+                      {msg.error && <AlertCircle className="mb-1 h-3.5 w-3.5 text-error" />}
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{msg.content}</p>
+                    </div>
+                  )}
+
+                  {/* Follow-ups */}
+                  {msg.streamFollowUps && msg.streamFollowUps.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pl-1">
+                      {msg.streamFollowUps.map((q, i) => (
+                        <button
+                          key={i}
+                          onClick={() => handleSubmit(q)}
+                          className="transition-theme rounded-full border border-cyan-500/20 bg-cyan-500/5 px-3 py-1.5 text-[11px] text-cyan-400 hover:border-cyan-400/40 hover:bg-cyan-500/10"
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Advisory */}
+                  {msg.advisory && <AdvisoryPanel advisory={msg.advisory} onFollowUp={(q) => handleSubmit(q)} />}
+                </div>
+              )}
             </div>
           ))}
         </div>
       </div>
 
-      <div className="border-t border-border p-4">
+      {/* Input */}
+      <div className={`shrink-0 ${embedded ? 'pb-4 pt-2' : 'border-t border-border p-4'}`}>
         <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="flex items-end gap-2">
           <textarea
             value={input}
@@ -296,7 +318,7 @@ export function ChatPanel({ onRegisterSubmit, onResponse, voiceState }: ChatPane
             placeholder="Ask about your data..."
             rows={1}
             disabled={sending}
-            className="flex-1 resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-cyan/20 disabled:opacity-50"
+            className={`flex-1 resize-none rounded-xl border border-border px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-cyan/20 disabled:opacity-50 ${embedded ? 'bg-surface' : 'bg-surface'}`}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -307,41 +329,12 @@ export function ChatPanel({ onRegisterSubmit, onResponse, voiceState }: ChatPane
           <button
             type="submit"
             disabled={!input.trim() || sending}
-            className="transition-theme flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-indigo text-white hover:bg-accent-violet disabled:opacity-50"
+            className="transition-theme flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-indigo text-white hover:bg-accent-violet disabled:opacity-50"
           >
-            {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>
         </form>
       </div>
-    </div>
-  );
-}
-
-function RoutingBadge({ routing }: { routing: RoutingDecision }) {
-  const [expanded, setExpanded] = useState(false);
-
-  const intentColors: Record<string, string> = {
-    analyze: 'bg-violet-500/20 text-violet-400',
-    profile: 'bg-blue-500/20 text-blue-400',
-    summarize: 'bg-emerald-500/20 text-emerald-400',
-    unsupported: 'bg-zinc-500/20 text-zinc-400',
-  };
-
-  return (
-    <div className="ml-0 mt-1">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-      >
-        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-        <span className={`rounded-full px-1.5 py-0.5 font-medium ${intentColors[routing.intent] ?? intentColors.unsupported}`}>
-          {routing.intent}
-        </span>
-        <span>{routing.actions.join(' → ')}</span>
-      </button>
-      {expanded && (
-        <p className="mt-1 pl-4 text-[11px] text-muted-foreground">{routing.reasoning}</p>
-      )}
     </div>
   );
 }
