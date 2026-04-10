@@ -1,32 +1,45 @@
 /**
- * Realtime Tools — callable functions exposed to the OpenAI Realtime model.
+ * Realtime Tools — functions the voice agent calls to interact with data.
  *
- * Each tool wraps an existing internal service. The Realtime model can invoke
- * these during a conversation to fetch real data, run analyses, etc.
+ * Each tool returns human-readable text (not raw JSON) so the model
+ * can speak the results naturally without robotic JSON recitation.
  */
 
-import { listDatasets, getDataset } from './dataset-store.js';
+import { listDatasets, getDataset, updateDataset } from './dataset-store.js';
 import { analyticsAgent } from '../agents/analytics-agent.js';
 import { advisoryAgent, type AdvisoryInput } from '../agents/advisory-agent.js';
 import { logger } from '../logger.js';
 
-// ─── Tool Schemas (JSON Schema for OpenAI function calling) ─
+// ─── Tool Definitions ──────────────────────────────────────
 
 export const TOOL_DEFINITIONS = [
   {
     type: 'function' as const,
     name: 'list_datasets',
-    description: 'List all uploaded datasets with their names, types, row counts, and analysis status.',
+    description: 'List all uploaded datasets. Call this FIRST when the user asks about their data, to discover what files are available.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
   {
     type: 'function' as const,
     name: 'get_dataset_profile',
-    description: 'Get the detailed profile of a specific dataset including column names, types, quality score, and sample values.',
+    description: 'Read a dataset in detail: every column name, data type, sample values, quality score, and any issues. Use this to understand what the data contains before analyzing it.',
     parameters: {
       type: 'object',
       properties: {
-        dataset_id: { type: 'string', description: 'The UUID of the dataset to profile' },
+        dataset_id: { type: 'string', description: 'The dataset UUID' },
+      },
+      required: ['dataset_id'],
+    },
+  },
+  {
+    type: 'function' as const,
+    name: 'read_dataset_data',
+    description: 'Read the actual data rows from a dataset. Returns the first 30 rows so you can see real values. Use this when the user asks you to read or review their file.',
+    parameters: {
+      type: 'object',
+      properties: {
+        dataset_id: { type: 'string', description: 'The dataset UUID' },
+        limit: { type: 'number', description: 'Number of rows to return (default 30, max 50)' },
       },
       required: ['dataset_id'],
     },
@@ -34,19 +47,19 @@ export const TOOL_DEFINITIONS = [
   {
     type: 'function' as const,
     name: 'analyze_dataset',
-    description: 'Run statistical analysis on a dataset. Returns KPIs, anomaly detection, and trend analysis with visualizations.',
+    description: 'Run full statistical analysis: KPI summaries, anomaly detection (z-score + IQR), and trend analysis (linear regression). Returns detailed findings with confidence scores. Use action "all" for comprehensive analysis, or focus on "kpi", "anomaly", or "trend" specifically.',
     parameters: {
       type: 'object',
       properties: {
-        dataset_id: { type: 'string', description: 'The UUID of the dataset to analyze' },
+        dataset_id: { type: 'string', description: 'The dataset UUID' },
         action: {
           type: 'string',
           enum: ['all', 'kpi', 'anomaly', 'trend'],
-          description: 'Type of analysis to run. Use "all" for comprehensive analysis.',
+          description: 'Analysis type. Default "all" for comprehensive.',
         },
         focus_column: {
           type: 'string',
-          description: 'Optional: focus analysis on a specific column name',
+          description: 'Focus analysis on one specific column. Use the exact column name from the profile.',
         },
       },
       required: ['dataset_id'],
@@ -55,11 +68,11 @@ export const TOOL_DEFINITIONS = [
   {
     type: 'function' as const,
     name: 'generate_advisory',
-    description: 'Generate a strategic advisory interpretation of analysis results. Provides executive summary, key insights, hypotheses, and decision-support guidance.',
+    description: 'Generate strategic advisory: executive summary, top insights ranked by importance, priority focus areas for management, key questions to answer, and recommended follow-up analyses. Call AFTER analyze_dataset.',
     parameters: {
       type: 'object',
       properties: {
-        dataset_id: { type: 'string', description: 'The UUID of the analyzed dataset' },
+        dataset_id: { type: 'string', description: 'The dataset UUID (must have been analyzed first)' },
       },
       required: ['dataset_id'],
     },
@@ -68,70 +81,127 @@ export const TOOL_DEFINITIONS = [
 
 // ─── Tool Executor ─────────────────────────────────────────
 
-export async function executeTool(
-  name: string,
-  args: Record<string, unknown>,
-): Promise<string> {
+export async function executeTool(name: string, args: Record<string, unknown>): Promise<string> {
   logger.info({ tool: name, args }, 'Realtime tool call');
 
   try {
     switch (name) {
       case 'list_datasets':
-        return executeListDatasets();
+        return toolListDatasets();
       case 'get_dataset_profile':
-        return executeGetProfile(args.dataset_id as string);
+        return toolGetProfile(args.dataset_id as string);
+      case 'read_dataset_data':
+        return toolReadData(args.dataset_id as string, args.limit as number | undefined);
       case 'analyze_dataset':
-        return executeAnalyze(args.dataset_id as string, args.action as string | undefined, args.focus_column as string | undefined);
+        return await toolAnalyze(args.dataset_id as string, args.action as string | undefined, args.focus_column as string | undefined);
       case 'generate_advisory':
-        return executeAdvisory(args.dataset_id as string);
+        return await toolAdvisory(args.dataset_id as string);
       default:
-        return JSON.stringify({ error: `Unknown tool: ${name}` });
+        return `Error: Unknown tool "${name}"`;
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logger.error({ tool: name, err: msg }, 'Realtime tool execution failed');
-    return JSON.stringify({ error: msg });
+    logger.error({ tool: name, err: msg }, 'Tool execution failed');
+    return `Error executing ${name}: ${msg}`;
   }
 }
 
-// ─── Tool Implementations ──────────────────────────────────
+// ─── Implementations ───────────────────────────────────────
 
-function executeListDatasets(): string {
+function toolListDatasets(): string {
   const datasets = listDatasets();
-  return JSON.stringify(datasets.map((d) => ({
-    id: d.id,
-    name: d.name,
-    sourceType: d.sourceType,
-    status: d.status,
-    capability: d.capability,
-    rowCount: d.rowCount,
-    columnCount: d.columnCount,
-  })));
-}
+  if (datasets.length === 0) {
+    return 'No datasets uploaded yet. Ask the user to upload a CSV, Excel, or PDF file.';
+  }
 
-function executeGetProfile(datasetId: string): string {
-  const ds = getDataset(datasetId);
-  if (!ds) return JSON.stringify({ error: 'Dataset not found' });
-
-  return JSON.stringify({
-    id: ds.id,
-    name: ds.name,
-    sourceType: ds.sourceType,
-    rowCount: ds.rowCount,
-    columnCount: ds.columnCount,
-    profile: ds.profile,
+  const lines = datasets.map((d) => {
+    const rows = d.rowCount ? `${d.rowCount} rows` : 'not profiled';
+    const cols = d.columnCount ? `${d.columnCount} columns` : '';
+    const status = d.capability === 'analysis_ready' ? 'ready for analysis' : d.status === 'error' ? 'profiling failed' : 'ingested';
+    return `- "${d.name}" (${d.sourceType.toUpperCase()}) — ${rows}${cols ? ', ' + cols : ''} — ${status} — ID: ${d.id}`;
   });
+
+  return `Found ${datasets.length} dataset(s):\n${lines.join('\n')}`;
 }
 
-async function executeAnalyze(
-  datasetId: string,
-  action?: string,
-  focusColumn?: string,
-): Promise<string> {
+function toolGetProfile(datasetId: string): string {
   const ds = getDataset(datasetId);
-  if (!ds) return JSON.stringify({ error: 'Dataset not found' });
+  if (!ds) return 'Dataset not found. Call list_datasets first.';
+
+  const profile = ds.profile as Record<string, unknown> | undefined;
+  if (!profile) return `Dataset "${ds.name}" has no profile data.`;
+
+  const columns = profile.columns as { name: string; dtype: string; null_count: number; unique_count: number; sample_values: unknown[]; semantic_type: string | null }[];
+  const quality = profile.quality_score as number;
+  const issues = profile.issues as { severity: string; column?: string; message: string }[];
+
+  const lines = [
+    `Dataset: "${ds.name}" (${ds.sourceType.toUpperCase()})`,
+    `Rows: ${ds.rowCount ?? '?'} | Columns: ${ds.columnCount ?? '?'} | Quality: ${Math.round((quality ?? 0) * 100)}%`,
+    '',
+    'Columns:',
+  ];
+
+  for (const col of columns ?? []) {
+    const samples = (col.sample_values ?? []).slice(0, 3).map(String).join(', ');
+    const semantic = col.semantic_type ? ` [${col.semantic_type}]` : '';
+    lines.push(`  ${col.name} (${col.dtype}${semantic}) — ${col.unique_count} unique, ${col.null_count} nulls — samples: ${samples}`);
+  }
+
+  if (issues && issues.length > 0) {
+    lines.push('');
+    lines.push('Issues:');
+    for (const issue of issues) {
+      lines.push(`  [${issue.severity}] ${issue.column ? issue.column + ': ' : ''}${issue.message}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function toolReadData(datasetId: string, limit?: number): string {
+  const ds = getDataset(datasetId);
+  if (!ds) return 'Dataset not found.';
+
+  const profile = ds.profile as Record<string, unknown> | undefined;
+  if (!profile) return 'No profile data available.';
+
+  const columns = profile.columns as { name: string; sample_values: unknown[] }[];
+  if (!columns || columns.length === 0) return 'No column data available.';
+
+  const maxRows = Math.min(limit ?? 30, 50);
+
+  // Build a table from sample values (we have up to 5 samples per column from profiling)
+  // For a richer view, we construct what we have
+  const colNames = columns.map((c) => c.name);
+  const rowCount = Math.min(maxRows, Math.max(...columns.map((c) => (c.sample_values ?? []).length)));
+
+  const lines = [
+    `Data preview for "${ds.name}" (showing available sample values):`,
+    '',
+    colNames.join(' | '),
+    colNames.map((n) => '-'.repeat(n.length)).join('-+-'),
+  ];
+
+  for (let i = 0; i < rowCount; i++) {
+    const row = columns.map((c) => {
+      const val = (c.sample_values ?? [])[i];
+      return val !== null && val !== undefined ? String(val) : '';
+    });
+    lines.push(row.join(' | '));
+  }
+
+  lines.push('');
+  lines.push(`Total rows in dataset: ${ds.rowCount ?? '?'}. Showing ${rowCount} sample rows.`);
+
+  return lines.join('\n');
+}
+
+async function toolAnalyze(datasetId: string, action?: string, focusColumn?: string): Promise<string> {
+  const ds = getDataset(datasetId);
+  if (!ds) return 'Dataset not found.';
   if (ds.capability !== 'analysis_ready') {
-    return JSON.stringify({ error: `Dataset "${ds.name}" is not ready for analysis` });
+    return `Dataset "${ds.name}" is not ready for analysis. It may still be processing or profiling failed.`;
   }
 
   const params: Record<string, unknown> = {};
@@ -142,26 +212,35 @@ async function executeAnalyze(
     { sessionId: crypto.randomUUID(), userId: 'realtime', traceId: crypto.randomUUID(), startedAt: new Date() },
   );
 
-  // Return a summary suitable for the model to speak
-  return JSON.stringify({
-    datasetName: ds.name,
-    insightCount: result.insights.length,
-    methodology: result.metadata.methodology,
-    insights: result.insights.map((i) => ({
-      title: i.title,
-      description: i.description,
-      confidence: i.confidence.level,
-    })),
-    rowsAnalyzed: result.metadata.rowsAnalyzed,
+  // Persist so advisory can access it
+  updateDataset(datasetId, {
+    lastAnalysis: result as unknown as Record<string, unknown>,
+    lastAnalyzedAt: new Date().toISOString(),
   });
+
+  const lines = [
+    `Analysis of "${ds.name}" — ${result.insights.length} findings across ${result.metadata.rowsAnalyzed} rows`,
+    `Method: ${result.metadata.methodology}`,
+    '',
+  ];
+
+  for (const insight of result.insights) {
+    const conf = insight.confidence.level;
+    lines.push(`[${conf.toUpperCase()}] ${insight.title}`);
+    lines.push(`  ${insight.description}`);
+    if (insight.followUps && insight.followUps.length > 0) {
+      lines.push(`  Follow-ups: ${insight.followUps.join('; ')}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
 }
 
-async function executeAdvisory(datasetId: string): Promise<string> {
+async function toolAdvisory(datasetId: string): Promise<string> {
   const ds = getDataset(datasetId);
-  if (!ds) return JSON.stringify({ error: 'Dataset not found' });
-  if (!ds.lastAnalysis) {
-    return JSON.stringify({ error: 'No analysis results available. Run analyze_dataset first.' });
-  }
+  if (!ds) return 'Dataset not found.';
+  if (!ds.lastAnalysis) return 'No analysis results. Run analyze_dataset first.';
 
   const analysis = ds.lastAnalysis as Record<string, unknown>;
   const insights = (analysis.insights as { title: string; description: string; confidence: { level: string; score: number; reasoning: string }; supportingData?: Record<string, unknown> | null }[]) ?? [];
@@ -180,10 +259,41 @@ async function executeAdvisory(datasetId: string): Promise<string> {
     { sessionId: crypto.randomUUID(), userId: 'realtime', traceId: crypto.randomUUID(), startedAt: new Date() },
   );
 
-  return JSON.stringify({
-    summary: advisory.summary,
-    topInsights: advisory.topInsights,
-    decisionSupport: advisory.decisionSupport,
-    confidenceAssessment: advisory.confidenceAssessment,
-  });
+  const lines = [
+    'STRATEGIC ADVISORY',
+    '',
+    advisory.summary,
+    '',
+  ];
+
+  if (advisory.topInsights.length > 0) {
+    lines.push('KEY FINDINGS:');
+    for (const ti of advisory.topInsights) {
+      lines.push(`  [${ti.importance.toUpperCase()}] ${ti.insight}`);
+    }
+    lines.push('');
+  }
+
+  const ds2 = advisory.decisionSupport;
+  if (ds2.priorityFocus.length > 0) {
+    lines.push('PRIORITY FOCUS AREAS:');
+    for (const pf of ds2.priorityFocus) lines.push(`  - ${pf}`);
+    lines.push('');
+  }
+
+  if (ds2.managementQuestions.length > 0) {
+    lines.push('QUESTIONS MANAGEMENT SHOULD ANSWER:');
+    for (const q of ds2.managementQuestions) lines.push(`  - ${q}`);
+    lines.push('');
+  }
+
+  if (ds2.recommendedFollowUps.length > 0) {
+    lines.push('RECOMMENDED NEXT ANALYSES:');
+    for (const f of ds2.recommendedFollowUps) lines.push(`  - ${f}`);
+    lines.push('');
+  }
+
+  lines.push(`CONFIDENCE: ${advisory.confidenceAssessment}`);
+
+  return lines.join('\n');
 }
